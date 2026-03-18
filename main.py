@@ -6,7 +6,7 @@ def teach_letter(letter):
     info = alphabet[letter]
     example = info["example"]
 
-    print("\n📘 Georgian Alphabet Lesson")
+    print("\n📘 Learn the Georgian Alphabet")
     print("---------------------------")
     
     # 1. Show letter
