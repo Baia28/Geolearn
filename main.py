@@ -8,7 +8,8 @@ from anban_game import AnbanGame
 
 
 def main(page: ft.Page):
-    page.title = "GeoLearn"
+    page.title = "GeoLearn"    
+    page.theme_mode = ft.ThemeMode.LIGHT
     page.bgcolor = "#F7F6FB"
     page.horizontal_alignment = "center"
     page.vertical_alignment = "start"
