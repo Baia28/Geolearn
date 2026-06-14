@@ -5,7 +5,6 @@ from data.anbani import anbani
 # NEW: Import the class we just created
 from learn_page import LearnPage 
 from anban_game import AnbanGame
-from auth_page import AuthPage
 
 
 def main(page: ft.Page):
@@ -16,9 +15,6 @@ def main(page: ft.Page):
     page.vertical_alignment = "start"
     page.padding = 20
     page.scroll = "auto"
-
-    #tracking variable for the logged-in student session
-    current_user = None
 
     # --- SHARED AUDIO PLAYER ---
     def play_audio(src):
@@ -47,15 +43,13 @@ def main(page: ft.Page):
         
         page.add(
             ft.Column(
-                [   
-                    # Display personalized greeting using current session state
-                    ft.Text(f"Gamarjoba, {current_user['username']}! 👋", size=18, color="grey700"),
+                [
                     ft.Icon(ft.icons.SCHOOL_ROUNDED, size=80, color="red"),
                     ft.Text("GeoLearn", size=40, weight="bold"),
                     
                     ft.Container(height=30), 
                     
-                    # LINK TO ALPHABET -> We call learn_section.show_gallery()
+                    # LINK TO NEW FILE -> We call learn_section.show_gallery()
                     ft.Container(
                         width=280, height=80, bgcolor="white", border_radius=15, ink=True,
                         on_click=lambda e: learn_section.show_anbani(), 
@@ -86,29 +80,13 @@ def main(page: ft.Page):
                         ),
                         shadow=ft.BoxShadow(blur_radius=10, color="#00000010", offset=ft.Offset(0,4))
                     ),
-
-                    ft.Container(height=20),
-                    # Log out button to return to the launcher profile gateway
-                    ft.TextButton("Switch Profile", on_click=lambda e: boot_auth_gateway())
                 ],
                 alignment="center", horizontal_alignment="center",
             )
         )
         page.update()
-    
-    # --- AUTH SUCCESS ROUTER ---
-    def on_login_success(authenticated_user):
-        nonlocal current_user
-        current_user = authenticated_user # Cache current session user details 
-        show_home() # Transition into main system workspace
 
-    # --- ENTRY GATEWAY CONTROLLER ---
-    def boot_auth_gateway():
-        auth_system = AuthPage(page, on_login_success)
-        auth_system.show_profile_selection()
-
-    # Run authentication gateway setup on application initial load
-    boot_auth_gateway()
+    show_home()
 
 ft.app(target=main, assets_dir=".")
 
