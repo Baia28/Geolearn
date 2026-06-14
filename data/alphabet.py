@@ -1,7 +1,7 @@
 alphabet = {
     "ა": {
         "latin": "a (A)",
-        "letter_audio": "audio/letters/a.m4a",
+        "letter_audio": "audio/letters/a.wav",
 
         "example": {
             "word": "ანანასი",
