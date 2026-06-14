@@ -5,6 +5,8 @@ from data.anbani import anbani
 # NEW: Import the class we just created
 from learn_page import LearnPage 
 from anban_game import AnbanGame
+from lesson_engine import LessonEngine
+
 
 
 def main(page: ft.Page):
@@ -33,6 +35,8 @@ def main(page: ft.Page):
     learn_section = LearnPage(page, lambda: show_home(), play_audio)
     # 2. Initialize Game Page (YOU WERE MISSING THIS LINE!)
     game_section = AnbanGame(page, lambda: show_home(), play_audio)
+    # 3. Initialize Lesson Engine
+    lesson_section = LessonEngine(page, lambda: show_home())
 
     # ==========================================
     # NAVIGATION HUB (HOME)
@@ -74,6 +78,20 @@ def main(page: ft.Page):
                             [
                                 ft.Icon(ft.icons.GAMES_ROUNDED, color="green", size=30),
                                 ft.Text("Practice Alphabet", size=20, weight="bold"),
+                                ft.Icon(ft.icons.ARROW_FORWARD_IOS, color="grey", size=16),
+                            ],
+                            alignment="spaceAround"
+                        ),
+                        shadow=ft.BoxShadow(blur_radius=10, color="#00000010", offset=ft.Offset(0,4))
+                    ),
+
+                    ft.Container(
+                        width=280, height=80, bgcolor="white", border_radius=15, ink=True,
+                        on_click=lambda e: lesson_section.start_lesson(), 
+                        content=ft.Row(
+                            [
+                                ft.Icon(ft.icons.LIGHTBULB_ROUNDED, color="amber", size=30),
+                                ft.Text("Start Lesson 1", size=20, weight="bold"),
                                 ft.Icon(ft.icons.ARROW_FORWARD_IOS, color="grey", size=16),
                             ],
                             alignment="spaceAround"
