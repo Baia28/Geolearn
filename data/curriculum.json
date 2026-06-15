@@ -1,0 +1,31 @@
+{
+  "lesson_id": "P1_U1_L1",
+  "title": "Hello & Goodbye",
+
+  "activities": [
+    {
+      "type": "learn",
+      "content_ref": "V1"
+    },
+
+    {
+      "type": "learn",
+      "content_ref": "V2"
+    },
+
+    {
+      "type": "learn",
+      "content_ref": "V3"
+    },
+
+    {
+      "type": "learn",
+      "content_ref": "PT1"
+    },
+
+    {
+      "type": "learn",
+      "content_ref": "PT2"
+    }
+  ]
+}
