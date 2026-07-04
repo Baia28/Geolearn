@@ -64,32 +64,99 @@ class LessonSession:
         
         conn.close()
         return monologues, dialogues
+    
 
-    def _get_distractors(self, content_id, limit=2):
+    def _get_distractors(self, correct_content_id, limit=2):
         """
-        Smart distractor generator. Pulls random wrong answers from the 
-        master content table, excluding the correct answer.
+        Dynamically generates high-quality distractors.
+        Returns tuples mapped as (english, georgian) so d[0] displays full English words
+        and d[1] satisfies your Georgian script checks on line 241.
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        cursor.execute("""
-            SELECT english, georgian 
-            FROM content 
-            WHERE content_id != ? 
-            ORDER BY RANDOM() 
-            LIMIT ?
-        """, (content_id, limit))
-        distractors = cursor.fetchall()
+        distractors = [] # Will store: (english, georgian)
+        lesson_id = getattr(self, 'lesson_id', getattr(self, 'current_lesson_id', None))
         
+        if lesson_id:
+            try:
+                # TIER 1: Pull from other vocabulary items in this EXACT same lesson
+                cursor.execute("""
+                    SELECT DISTINCT c.english, c.georgian
+                    FROM content c
+                    JOIN lesson_contents lc ON c.content_id = lc.associated_id
+                    WHERE lc.lesson_id = ? 
+                      AND c.content_id != ? 
+                      AND LENGTH(c.english) >= 2
+                    ORDER BY RANDOM() LIMIT ?
+                """, (lesson_id, correct_content_id, limit))
+                distractors.extend(cursor.fetchall())
+                
+                # TIER 2: If we need more options, expand to the wider Unit
+                if len(distractors) < limit:
+                    needed = limit - len(distractors)
+                    picked_english = [row[0] for row in distractors] # English is at index 0
+                    
+                    query = """
+                        SELECT DISTINCT c.english, c.georgian
+                        FROM content c
+                        JOIN lesson_contents lc ON c.content_id = lc.associated_id
+                        JOIN lessons l ON lc.lesson_id = l.lesson_id
+                        WHERE l.unit_id = (SELECT unit_id FROM lessons WHERE lesson_id = ?)
+                          AND c.content_id != ?
+                          AND LENGTH(c.english) >= 2
+                    """
+                    params = [lesson_id, correct_content_id]
+                    
+                    if picked_english:
+                        placeholders = ','.join(['?'] * len(picked_english))
+                        query += f" AND c.english NOT IN ({placeholders})"
+                        params.extend(picked_english)
+                        
+                    query += " ORDER BY RANDOM() LIMIT ?"
+                    params.append(needed)
+                    
+                    cursor.execute(query, params)
+                    distractors.extend(cursor.fetchall())
+                    
+            except Exception as e:
+                print(f"⚠️ Tiered distractor parsing bypass: {e}")
+
+        # TIER 3: Global Fallback with strict length guardrails
+        if len(distractors) < limit:
+            needed = limit - len(distractors)
+            picked_english = [row[0] for row in distractors]
+            
+            query = """
+                SELECT DISTINCT english, georgian FROM content 
+                WHERE content_id != ? 
+                  AND LENGTH(english) >= 2
+            """
+            params = [correct_content_id]
+            
+            if picked_english:
+                placeholders = ','.join(['?'] * len(picked_english))
+                query += f" AND english NOT IN ({placeholders})"
+                params.extend(picked_english)
+                
+            query += " ORDER BY RANDOM() LIMIT ?"
+            params.append(needed)
+            
+            cursor.execute(query, params)
+            distractors.extend(cursor.fetchall())
+            
         conn.close()
-        return distractors
+        
+        # Return the exact limit requested, perfectly balanced as (english, georgian)
+        return distractors[:limit]
+
+
     def get_dialogue_lines(self, dialogue_id):
         """Fetches the full script lines using your clean relational IDs."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # 🌟 Cleaned up to map dl.content_id directly to c.content_id ordered by line_order
+        #  Cleaned up to map dl.content_id directly to c.content_id ordered by line_order
         cursor.execute("""
             SELECT dl.speaker, c.georgian, c.transliteration, c.english 
             FROM dialogue_lines dl
@@ -101,6 +168,204 @@ class LessonSession:
         
         conn.close()
         return lines
+    
+    def build_chronological_playlist(self, lesson_id, unit_id):
+        """
+        Compiles the active lesson steps based on your strict Step_Order timeline.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Pull steps matching your updated lesson_contents primary key structure
+        cursor.execute("""
+            SELECT lc.step_order, lct.name, lc.associated_id
+            FROM lesson_contents lc
+            JOIN lesson_component_types lct ON lc.component_type_id = lct.component_type_id
+            WHERE lc.lesson_id = ?
+            ORDER BY lc.step_order ASC
+        """, (lesson_id,))
+        
+        raw_steps = cursor.fetchall()
+        playlist = []
+        
+        for step_num, comp_type, assoc_id in raw_steps:
+            if comp_type == 'monologue':
+                # Fetch word data
+                cursor.execute("SELECT content_id, georgian, transliteration, english FROM content WHERE content_id = ?", (assoc_id,))
+                c_id, geo, trans, eng = cursor.fetchone()
+                
+                # Generate dynamic multiple choice options
+                distractors = self.get_smart_distractors(c_id, unit_id, limit=3)
+                choices = distractors + [eng]
+                import random
+                random.shuffle(choices) # Shuffle so correct answer isn't always last
+                
+                playlist.append({
+                    "step_order": step_num,
+                    "type": "vocabulary_challenge",
+                    "content_id": c_id,
+                    "georgian": geo,
+                    "transliteration": trans,
+                    "correct_answer": eng,
+                    "choices": choices
+                })
+                
+            elif comp_type == 'dialogue':
+                playlist.append({
+                    "step_order": step_num,
+                    "type": "dialogue_passive",
+                    "dialogue_id": assoc_id
+                })
+                
+        conn.close()
+        return playlist
+
+
+    def _should_fade_transliteration(self, content_id, mastery_threshold=3):
+        """
+        Checks user_progress.db to see if the user has mastered a word enough
+        times to hide its transliteration helper.
+        """
+        # Connect to your new user progress tracking database
+        conn = sqlite3.connect("database/user_progress.db")
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT repetitions FROM srs_registry WHERE content_id = ?
+            """, (content_id,))
+            res = cursor.fetchone()
+            
+            # If they have answered it correctly >= threshold times, hide it!
+            if res and res[0] >= mastery_threshold:
+                return True
+        except Exception as e:
+            print(f"⚠️ Progress database read bypass: {e}")
+        finally:
+            conn.close()
+            
+        return False
+
+
+    def _inject_srs_reviews(self, base_playlist):
+        """
+        Scans for overdue flashcards and weaves them into the front of the active lesson.
+        """
+        import datetime
+        
+        progress_conn = sqlite3.connect("database/user_progress.db")
+        progress_cursor = progress_conn.cursor()
+        
+        content_conn = sqlite3.connect(self.db_path)
+        content_cursor = content_conn.cursor()
+        
+        today = datetime.date.today().isoformat()
+        injected_steps = []
+        
+        try:
+            # 1. Find overdue word content IDs
+            progress_cursor.execute("""
+                SELECT content_id FROM srs_registry 
+                WHERE next_review_date <= ?
+                ORDER BY mastery_level ASC, next_review_date ASC
+                LIMIT 3
+            """, (today,))
+            
+            overdue_items = progress_cursor.fetchall()
+            
+            # 2. Fetch the text assets for these words and build review steps
+            for index, (c_id,) in enumerate(overdue_items):
+                content_cursor.execute("""
+                    SELECT georgian, transliteration, english FROM content WHERE content_id = ?
+                """, (c_id,))
+                word_res = content_cursor.fetchone()
+                
+                if word_res:
+                    geo, trans, eng = word_res
+                    
+                    # Grab smart distractors for the review question
+                    distractors = self._get_distractors(c_id, limit=2)
+                    
+                    # Formulate an injection activity step object
+                    review_step = {
+                        "step_order": 0, # Denotes system injected review
+                        "type": "vocabulary_challenge",
+                        "content_id": c_id,
+                        "georgian": geo,
+                        "transliteration": trans,
+                        "correct_answer": eng,
+                        "distractors": distractors,
+                        "is_review_item": True # Flagged for your logging telemetry
+                    }
+                    injected_steps.append(review_step)
+                    
+            if injected_steps:
+                print(f"🧠 SRS Intercept: Injected {len(injected_steps)} overdue review cards into session.")
+                
+        except Exception as e:
+            print(f"⚠️ SRS Injection failure: {e}")
+        finally:
+            progress_conn.close()
+            content_conn.close()
+            
+        # Return the review items mixed cleanly at the top of your actual lesson items
+        return injected_steps + base_playlist
+    
+
+
+    def get_next_automated_lesson():
+        """
+        Scans the progress database to find the first incomplete lesson.
+        If no progress exists, defaults to Phase 1, Unit 1, Lesson 1.
+        """
+        import sqlite3
+        
+        # 1. Connect to the progress tracker to see what is completed
+        conn_prog = sqlite3.connect("user_progress.db")
+        cursor_prog = conn_prog.cursor()
+        
+        cursor_prog.execute("SELECT lesson_id FROM lesson_progress WHERE is_completed = 1")
+        completed_lessons = [row[0] for row in cursor_prog.fetchall()]
+        conn_prog.close()
+        
+        # 2. Connect to your content book to find the next logical lesson matching your chronology
+        conn_content = sqlite3.connect("content_poolbook.db")
+        cursor_content = conn_content.cursor()
+        
+        # Grab all valid lessons in structural hierarchy order
+        cursor_content.execute("""
+            SELECT l.lesson_id, p.sequence_order, u.sequence_order, l.sequence_order 
+            FROM lessons l
+            JOIN units u ON l.unit_id = u.unit_id
+            JOIN phases p ON u.phase_id = p.phase_id
+            ORDER BY p.sequence_order ASC, u.sequence_order ASC, l.sequence_order ASC
+        """)
+        all_lessons = cursor_content.fetchall()
+        conn_content.close()
+        
+        # Find the very first lesson ID that doesn't exist in the 'completed' list
+        for lesson_id, p_num, u_num, l_num in all_lessons:
+            if lesson_id not in completed_lessons:
+                print(f"🎯 Automated Routing: Resuming at Phase {p_num}, Unit {u_num}, Lesson {l_num}")
+                return lesson_id, p_num, u_num, l_num
+                
+        # Fallback: If everything is completed, return the last lesson or loop back
+        return all_lessons[0][0], all_lessons[0][1], all_lessons[0][2], all_lessons[0][3]
+
+
+
+    def get_progress_percentage(self, current_step_index):
+            """
+            Calculates exactly how much green to fill in your Flet Progress Bar.
+            Returns a float between 0.0 and 1.0.
+            """
+            total_steps = len(self.session_steps)
+            if total_steps == 0:
+                return 0.0
+            
+            # Calculate fraction for the UI wrapper
+            return min(current_step_index / total_steps, 1.0)
+    
 
 
     # ==========================================
@@ -151,8 +416,13 @@ class LessonSession:
                 "activity": "type_georgian",
                 "target": word_data
             })
-            
+
+        # This weaves the smart review items seamlessly right at the start of the user's session.
+        self.queue = self._inject_srs_reviews(self.queue)   
+        
+        # Recalculate total exercises AFTER injection so progress math stays accurate 
         self.total_exercises = len(self.queue)
+        
 
 
 
@@ -195,6 +465,72 @@ class LessonSession:
             
             progress = (self.completed_count / self.total_exercises) if self.total_exercises > 0 else 0.0
             return {"status": "failed", "progress": progress}
+        
+
+def log_user_response(self, content_id, is_correct, activity_type="mc_geo_to_eng"):
+        """
+        Saves user results using absolute directory paths to prevent ghost DB files.
+        """
+        import datetime
+        import os
+        
+        # Force the absolute path to your engine folder's project root
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_db_path = os.path.join(base_dir, "database/user_progress.db")
+        
+        print(f"\n🔍 DB Write Attempt: Target file path is: {target_db_path}")
+        
+        conn = sqlite3.connect(target_db_path)
+        cursor = conn.cursor()
+        
+        try:
+            p_num = getattr(self, 'phase_num', 1)
+            u_num = getattr(self, 'unit_num', 1)
+            l_num = getattr(self, 'lesson_id', 1)
+            
+            # 1. WRITE ACTIVITY LOG
+            cursor.execute("""
+                INSERT INTO research_activity_log 
+                (phase_num, unit_num, lesson_num, activity_type, content_id, is_correct)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (p_num, u_num, l_num, activity_type, content_id, 1 if is_correct else 0))
+            
+            # 2. CALCULATE SRS INTERVALS
+            cursor.execute("SELECT repetitions, ease_factor, interval_days FROM srs_registry WHERE content_id = ?", (content_id,))
+            srs_row = cursor.fetchone()
+            
+            if not srs_row:
+                repetitions = 1 if is_correct else 0
+                ease_factor = 2.5
+                interval_days = 1 if is_correct else 0
+            else:
+                old_reps, old_ef, old_interval = srs_row
+                if is_correct:
+                    repetitions = old_reps + 1
+                    ease_factor = max(1.3, old_ef + 0.1)
+                    interval_days = 1 if repetitions == 1 else (4 if repetitions == 2 else int(old_interval * ease_factor))
+                else:
+                    repetitions = 0
+                    interval_days = 0
+                    ease_factor = max(1.3, old_ef - 0.2)
+            
+            next_date = (datetime.date.today() + datetime.timedelta(days=interval_days)).isoformat()
+            
+            # 3. UPSERT INTO REGISTRY
+            cursor.execute("""
+                INSERT OR REPLACE INTO srs_registry 
+                (content_id, mastery_level, ease_factor, repetitions, interval_days, next_review_date)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (content_id, repetitions, ease_factor, repetitions, interval_days, next_date))
+            
+            conn.commit()
+            print(f"💾 DATABASE SUCCESS: Logged entry for content_id {content_id}! (Correct: {is_correct})")
+            
+        except Exception as e:
+            print(f"❌ DATABASE CRITICAL ERROR: {e}")
+        finally:
+            conn.close()
+
 
 
 
@@ -292,7 +628,7 @@ def run_terminal_lesson(session):
             if res["status"] == "correct":
                 print("\033[1;32m✅ CORRECT!\033[0m")
             else:
-                print("\033[1;31m❌ WRONG ANWER!\033[0m Re-shuffling card back into deck...")
+                print("\033[1;31m❌ WRONG ANSWER!\033[0m Re-shuffling card back into deck...")
                 
         print(f"Current Lesson Queue Size: {len(session.queue)} Cards | Progress: {res['progress']*100:.1f}%")
 
@@ -305,10 +641,11 @@ if __name__ == "__main__":
         db_path=DATABASE_NAME, 
         phase_num=1, 
         unit_num=1, 
-        lesson_num=2
+        lesson_num=1
     )
 
     # Pass the entire active state machine directly to the player loop
     run_terminal_lesson(active_session)
+    
 
 

@@ -182,10 +182,11 @@ def main():
         lesson_id INTEGER,
         component_type_id INTEGER,
         associated_id INTEGER, 
-        PRIMARY KEY (lesson_id, component_type_id, associated_id),
+        step_order INTEGER,     
+        PRIMARY KEY (lesson_id, step_order),
         FOREIGN KEY(lesson_id) REFERENCES lessons(lesson_id),
         FOREIGN KEY(component_type_id) REFERENCES lesson_component_types(component_type_id)
-    );
+    );                    
                          
     """)
 
@@ -323,9 +324,13 @@ def main():
         u_name = clean_str(row.get('Unit_Name'))
         l_num = clean_str(row.get('Lesson'))
         c_type = clean_str(row.get('Content_Type')) # 'monologue' or 'dialogue'
+        
+        raw_step = row.get('Step_Order')
+        step_order = int(float(raw_step)) if raw_step and str(raw_step).strip().replace('.','',1).isdigit() else None
+
         target = clean_str(row.get('Content'))     # The word string or dialogue code (e.g. P1_U1_D1)
 
-        if not p_num or not u_num or not l_num or not c_type or not target: 
+        if not p_num or not u_num or not l_num or not c_type or not target or step_order is None: 
             continue
 
         # Ensure Phase structural hierarchy exists
@@ -367,9 +372,9 @@ def main():
         # Insert relationship if asset found, warn if missing
         if assoc_id:
             cursor.execute("""
-                INSERT OR IGNORE INTO lesson_contents (lesson_id, component_type_id, associated_id)
-                VALUES (?, ?, ?)
-            """, (lesson_id, comp_type_id, assoc_id))
+                INSERT OR IGNORE INTO lesson_contents (lesson_id, component_type_id, associated_id, step_order)
+                VALUES (?, ?, ?, ?)
+            """, (lesson_id, comp_type_id, assoc_id, step_order))
         else:
             print(f"  [WARNING] Linked target '{target}' not found in database! (Type: {c_type})")
 
