@@ -1,22 +1,30 @@
 import sqlite3
 import random
 import os
+import datetime
 
 class LessonSession:
-    #  Update __init__ to take Phase, Unit, and Lesson sequence numbers
-    def __init__(self, db_path, phase_num, unit_num, lesson_num):
+    #  Default parameters to None to allow 100% automated lesson routing!
+    def __init__(self, db_path, phase_num=None, unit_num=None, lesson_num=None):
         self.db_path = db_path
-        self.phase_num = phase_num
-        self.unit_num = unit_num
-        self.lesson_num = lesson_num
-        
+
+    # If coordinates aren't provided, auto-discover where the user left off
+        if phase_num is None or unit_num is None or lesson_num is None:
+            resolved_id, p, u, l = self.get_next_automated_lesson()
+            self.phase_num = p
+            self.unit_num = u
+            self.lesson_num = l
+            self.lesson_id = resolved_id
+        else:
+            self.phase_num = phase_num
+            self.unit_num = unit_num
+            self.lesson_num = lesson_num
+            self.lesson_id = None # Will resolve in _resolve_lesson_id() (# Resolved dynamically via helper)
+
         # Game State
         self.queue = []            
         self.total_exercises = 0   
         self.completed_count = 0
-
-        # Track the internal lesson ID after resolving coordinates
-        self.lesson_id = None
         
         # Initialize the deck
         self._build_session()
@@ -24,13 +32,16 @@ class LessonSession:
     # ==========================================
     # 1. DATABASE FETCHING & DISTRACTORS
     # ====================================
+    
 
-    def _fetch_lesson_contents(self):
-        """Grabs all monologues and dialogues using clean human curriculum numbers."""
+
+    def _resolve_lesson_id(self):
+        """Resolves and caches the internal primary key lesson_id from curriculum sequence coordinates."""
+        if getattr(self, 'lesson_id', None) is not None:
+            return self.lesson_id
+            
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
-        # 1. Step 1: Find the exact internal lesson_id using our sequence orders
         cursor.execute("""
             SELECT l.lesson_id 
             FROM lessons l
@@ -38,37 +49,16 @@ class LessonSession:
             JOIN phases p ON u.phase_id = p.phase_id
             WHERE p.sequence_order = ? AND u.sequence_order = ? AND l.sequence_order = ?
         """, (self.phase_num, self.unit_num, self.lesson_num))
-        
         res = cursor.fetchone()
-        if not res:
-            conn.close()
-            return [], [] # Return empty if coordinates don't exist
-            
-        self.lesson_id = res[0]
-
-        # 2. Step 2: Fetch Monologues using the resolved internal ID
-        cursor.execute("""
-            SELECT c.content_id, c.georgian, c.english, c.transliteration 
-            FROM lesson_contents lc
-            JOIN lesson_component_types lct ON lc.component_type_id = lct.component_type_id
-            JOIN content c ON lc.associated_id = c.content_id
-            WHERE lc.lesson_id = ? AND lct.name = 'monologue'
-        """, (self.lesson_id,))
-        monologues = cursor.fetchall()
-
-        # 3. Step 3: Fetch Dialogues
-        cursor.execute("""
-            SELECT d.dialogue_id, d.internal_code 
-            FROM lesson_contents lc
-            JOIN lesson_component_types lct ON lc.component_type_id = lct.component_type_id
-            JOIN dialogues d ON lc.associated_id = d.dialogue_id
-            WHERE lc.lesson_id = ? AND lct.name = 'dialogue'
-        """, (self.lesson_id,))
-        dialogues = cursor.fetchall()
-        
         conn.close()
-        return monologues, dialogues
+        
+        if res:
+            self.lesson_id = res[0]
+        return self.lesson_id
     
+
+
+
 
     def _get_distractors(self, correct_content_id, limit=2):
         """
@@ -80,7 +70,7 @@ class LessonSession:
         cursor = conn.cursor()
         
         distractors = [] # Will store: (english, georgian)
-        lesson_id = self.lesson_id
+        lesson_id = self._resolve_lesson_id()
         
         if lesson_id:
             try:
@@ -155,6 +145,10 @@ class LessonSession:
         return distractors[:limit]
 
 
+
+
+
+
     def get_dialogue_lines(self, dialogue_id):
         """Fetches the full script lines using your clean relational IDs."""
         conn = sqlite3.connect(self.db_path)
@@ -173,6 +167,10 @@ class LessonSession:
         conn.close()
         return lines
     
+
+
+
+
     def build_chronological_playlist(self, lesson_id, unit_id):
         """
         Compiles the active lesson steps based on your strict Step_Order timeline.
@@ -225,6 +223,9 @@ class LessonSession:
         return playlist
 
 
+
+
+
     def _should_fade_transliteration(self, content_id, mastery_threshold=3):
         """
         Checks user_progress.db to see if the user has mastered a word enough
@@ -251,12 +252,14 @@ class LessonSession:
         return False
 
 
+
+
+
     def _inject_srs_reviews(self, base_playlist):
         """
         Scans for overdue flashcards and weaves them into the front of the active lesson.
         """
-        import datetime
-        
+
         progress_conn = sqlite3.connect("database/user_progress.db")
         progress_cursor = progress_conn.cursor()
         
@@ -320,6 +323,7 @@ class LessonSession:
 
 
 
+
     def get_progress_percentage(self, current_step_index):
             """
             Calculates exactly how much green to fill in Flet Progress Bar.
@@ -333,61 +337,156 @@ class LessonSession:
     
 
 
+
+
+
     # ==========================================
     # 2. THE PLAYLIST GENERATION TEMPLATE
     # ====================================
     def _build_session(self):
-        """Translates raw database rows into an interactive queue of exercises."""
-        monologues, dialogues = self._fetch_lesson_contents()
+        """
+        Translates database rows into an interactive queue of exercises. 
+        Words are parsed chronologically, and their interactive testing 
+        variants are shuffled/interleaved between dialogue milestones for optimal cognitive memory retention.
+        """
+        lesson_id = self._resolve_lesson_id()
         
-        if not monologues and not dialogues:
-            print(f"[!] Warning: No content found linked to Lesson ID {self.lesson_id}")
+        if not lesson_id:
+            print(f"[!] Warning: Coordinate mapping failed for Phase {self.phase_num} Unit {self.unit_num}")            
             return
-
-        # Phase 1: Receptive Recognition (Discovery / Fail Forward)
-        for m in monologues:
-            word_data = {"id": m[0], "geo": m[1], "eng": m[2], "trans": m[3]}
-            distractors = self._get_distractors(word_data["id"], limit=2)
-            
-            self.queue.append({
-                "activity": "mc_geo_to_eng",
-                "target": word_data,
-                "distractors": [d[0] for d in distractors] # English strings
-            })
-
-        # Phase 2: Auditory Integration 
-        for m in monologues:
-            word_data = {"id": m[0], "geo": m[1], "eng": m[2], "trans": m[3]}
-            distractors = self._get_distractors(word_data["id"], limit=2)
-            
-            self.queue.append({
-                "activity": "audio_mc_to_geo",
-                "target": word_data,
-                "distractors": [d[1] for d in distractors] # Georgian script strings
-            })
-
-        # Phase 3: Dialogue Context Reading
-        for d in dialogues:
-            dialogue_data = {"id": d[0], "code": d[1]}
-            self.queue.append({
-                "activity": "dialogue_passive",
-                "target": dialogue_data
-            })
-
-        # Phase 4: Active Hard Production (The Recall Target)
-        for m in monologues:
-            word_data = {"id": m[0], "geo": m[1], "eng": m[2], "trans": m[3]}
-            self.queue.append({
-                "activity": "type_georgian",
-                "target": word_data
-            })
-
-        # This weaves the smart review items seamlessly right at the start of the user's session.
-        self.queue = self._inject_srs_reviews(self.queue)   
         
-        # Recalculate total exercises AFTER injection so progress math stays accurate 
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+
+        # Extract chronological structural configuration directly from the curriculum table
+        cursor.execute("""
+            SELECT lc.step_order, lct.name, lc.associated_id
+            FROM lesson_contents lc
+            JOIN lesson_component_types lct ON lc.component_type_id = lct.component_type_id
+            WHERE lc.lesson_id = ?
+            ORDER BY lc.step_order ASC
+        """, (lesson_id,))
+        raw_steps = cursor.fetchall()
+
+        final_queue = []
+        activity_pool = []
+        
+        for step_num, comp_type, assoc_id in raw_steps:
+            if comp_type == 'monologue':
+                # Pull vocabulary item
+                cursor.execute("SELECT content_id, georgian, english, transliteration FROM content WHERE content_id = ?", (assoc_id,))
+                word_row = cursor.fetchone()
+                if word_row:
+                    word_data = {"id": word_row[0], "geo": word_row[1], "eng": word_row[2], "trans": word_row[3]}
+                    distractors = self._get_distractors(word_data["id"], limit=2)
+                    
+
+                
+                    # Add all interactive testing variants into the pooling bucket to be shuffled
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "mc_geo_to_eng",
+                        "target": word_data,
+                        "distractors": [d[0] for d in distractors]
+                    })
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "audio_mc_to_geo",
+                        "target": word_data,
+                        "distractors": [d[1] for d in distractors]
+                    })
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "type_georgian",
+                        "target": word_data
+                    })
+
+
+
+                    
+            elif comp_type == 'dialogue':
+                # Dialogue checkpoint hit! Interleave/shuffle the current vocabulary variants first
+                random.shuffle(activity_pool)
+                final_queue.extend(activity_pool)
+                activity_pool = [] # Clear the pool for words appearing after the dialogue
+
+
+                # Insert the passive dialogue study frame at its exact chronological milestone position                
+                cursor.execute("SELECT dialogue_id, internal_code FROM dialogues WHERE dialogue_id = ?", (assoc_id,))
+                diag_row = cursor.fetchone()
+                if diag_row:
+                    dialogue_data = {"id": diag_row[0], "code": diag_row[1]}
+                    self.queue.append({
+                        "step_order": step_num,
+                        "activity": "dialogue_passive",
+                        "target": dialogue_data
+                    })
+                    
+        conn.close()
+
+        # Flush out any remaining vocabulary variants left in the practice pool
+        random.shuffle(activity_pool)
+        final_queue.extend(activity_pool)
+
+        # Inject personalized spaced repetition logs. logs to the front of the session deck.
+        self.queue = self._inject_srs_reviews(final_queue)   
         self.total_exercises = len(self.queue)
-        
+
+
+
+    def get_next_automated_lesson(self):
+            """
+            Scans the progress database to find the first incomplete lesson.
+            If no progress exists, defaults to Phase 1, Unit 1, Lesson 1.
+            """
+            import os
+            import sqlite3
+            
+            # Dynamically find the project base directory
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            target_prog_db = os.path.join(base_dir, "database/user_progress.db")
+            
+            # 1. Connect to the progress tracker to see what is completed
+            conn_prog = sqlite3.connect(target_prog_db)
+            cursor_prog = conn_prog.cursor()
+            try:
+                # Ensure table exists so it doesn't crash on first run
+                cursor_prog.execute("""
+                    CREATE TABLE IF NOT EXISTS lesson_progress (
+                        lesson_id INTEGER PRIMARY KEY,
+                        is_completed INTEGER DEFAULT 0
+                    )
+                """)
+                cursor_prog.execute("SELECT lesson_id FROM lesson_progress WHERE is_completed = 1")
+                completed_lessons = [row[0] for row in cursor_prog.fetchall()]
+            except Exception:
+                completed_lessons = []
+            finally:
+                conn_prog.close()
+                
+            # 2. Connect to your content poolbook to find the next chronological lesson
+            conn_content = sqlite3.connect(self.db_path)
+            cursor_content = conn_content.cursor()
+            cursor_content.execute("""
+                SELECT l.lesson_id, p.sequence_order, u.sequence_order, l.sequence_order 
+                FROM lessons l
+                JOIN units u ON l.unit_id = u.unit_id
+                JOIN phases p ON u.phase_id = p.phase_id
+                ORDER BY p.sequence_order ASC, u.sequence_order ASC, l.sequence_order ASC
+            """)
+            all_lessons = cursor_content.fetchall()
+            conn_content.close()
+            
+            # Find the very first lesson ID that doesn't exist in the 'completed' list
+            for lesson_id, p_num, u_num, l_num in all_lessons:
+                if lesson_id not in completed_lessons:
+                    print(f"🎯 Automated Routing: Resuming at Phase {p_num}, Unit {u_num}, Lesson {l_num}")
+                    return lesson_id, p_num, u_num, l_num
+                    
+            # Fallback: If everything is completed, default back to the first lesson
+            return all_lessons[0][0], all_lessons[0][1], all_lessons[0][2], all_lessons[0][3]
+
 
 
 
@@ -422,9 +521,14 @@ class LessonSession:
         if is_correct:
             # Answered perfectly! Permanently cycle it off the active stack
             if self.queue:
-                self.queue.pop(0)
+                self.queue.pop(0) # Remove successful card
             self.completed_count += 1
             status = "correct"
+
+            # Trigger full lesson completion logging when the deck size clears
+            if not self.queue:
+                self._mark_lesson_completed()
+
         else:
             # Mistake made. Penalty: Pop off top and insert it 3 items down to ensure repetition
             status = "incorrect"
@@ -441,14 +545,42 @@ class LessonSession:
             "status": status,
             "progress": max(0.0, min(current_progress, 1.0))
         }
+    
+
+    def _mark_lesson_completed(self):
+        """Commits full lesson milestone clearance items into user_progress.db tracking tables."""
+        import os
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_db_path = os.path.join(base_dir, "database/user_progress.db")
+        
+        conn = sqlite3.connect(target_db_path)
+        cursor = conn.cursor()
+        try:
+            lesson_id = self._resolve_lesson_id()
+            if lesson_id:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS lesson_progress (
+                        lesson_id INTEGER PRIMARY KEY,
+                        is_completed INTEGER DEFAULT 0
+                    )
+                """)
+                cursor.execute("""
+                    INSERT OR REPLACE INTO lesson_progress (lesson_id, is_completed)
+                    VALUES (?, 1)
+                """, (lesson_id,))
+                conn.commit()
+                print(f"\n🎉 PROGRESS LOG SUCCESS: Lesson ID {lesson_id} marked 100% Complete in user_progress.db!")
+        except Exception as e:
+            print(f"❌ PROGRESS LOG ERROR: {e}")
+        finally:
+            conn.close()
         
 
     def log_user_response(self, content_id, is_correct, activity_type="mc_geo_to_eng"):
         """
         Saves user results using absolute directory paths to prevent ghost DB files.
         """
-        import datetime
-            
+
         # Force the absolute path to your engine folder's project root
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target_db_path = os.path.join(base_dir, "database/user_progress.db")
@@ -508,43 +640,6 @@ class LessonSession:
 
 
 
-    def get_next_automated_lesson():
-        """Scans the progress database to find the first incomplete lesson."""
-        
-        import os
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
-        # 1. Connect to the progress tracker to see what is completed
-        conn_prog = sqlite3.connect("database/user_progress.db")
-        cursor_prog = conn_prog.cursor()
-        
-        cursor_prog.execute("SELECT lesson_id FROM lesson_progress WHERE is_completed = 1")
-        completed_lessons = [row[0] for row in cursor_prog.fetchall()]
-        conn_prog.close()
-        
-        # 2. Connect to your content book to find the next logical lesson matching your chronology
-        conn_content = sqlite3.connect("database/content_poolbook.db")
-        cursor_content = conn_content.cursor()
-        
-        # Grab all valid lessons in structural hierarchy order
-        cursor_content.execute("""
-            SELECT l.lesson_id, p.sequence_order, u.sequence_order, l.sequence_order 
-            FROM lessons l
-            JOIN units u ON l.unit_id = u.unit_id
-            JOIN phases p ON u.phase_id = p.phase_id
-            ORDER BY p.sequence_order ASC, u.sequence_order ASC, l.sequence_order ASC
-        """)
-        all_lessons = cursor_content.fetchall()
-        conn_content.close()
-        
-        # Find the very first lesson ID that doesn't exist in the 'completed' list
-        for lesson_id, p_num, u_num, l_num in all_lessons:
-            if lesson_id not in completed_lessons:
-                print(f"🎯 Automated Routing: Resuming at Phase {p_num}, Unit {u_num}, Lesson {l_num}")
-                return lesson_id, p_num, u_num, l_num
-                
-        # Fallback: If everything is completed, return the last lesson or loop back
-        return all_lessons[0][0], all_lessons[0][1], all_lessons[0][2], all_lessons[0][3]
 
 
 
@@ -653,9 +748,6 @@ if __name__ == "__main__":
     # Initialize the session object with curriculum coordinates
     active_session = LessonSession(
         db_path=DATABASE_NAME, 
-        phase_num=1, 
-        unit_num=1, 
-        lesson_num=1
     )
 
     # Pass the entire active state machine directly to the player loop
