@@ -295,7 +295,7 @@ class LessonSession:
             overdue_items = progress_cursor.fetchall()
             
             # 2. Fetch the text assets for these words and build review steps
-            for index, (c_id,) in enumerate(overdue_items):
+            for (c_id,) in overdue_items:
                 content_cursor.execute("""
                     SELECT georgian, transliteration, english FROM content WHERE content_id = ?
                 """, (c_id,))
@@ -320,6 +320,8 @@ class LessonSession:
                         "distractors": [d[0] for d in raw_distractors],
                         "is_review_item": True # Flagged for your logging telemetry
                     })
+            if injected_steps:
+                print(f"🧠 SRS Intercept: Injected {len(injected_steps)} real spaced review cards.")
         except Exception as e:
             print(f"⚠️ SRS Injection failure: {e}")
         finally:
@@ -442,13 +444,6 @@ class LessonSession:
                         "activity": "type_georgian",
                         "target": word_data
                     })
-                    # Only inject translit typing if they haven't mastered it
-                    if display_trans:
-                        activity_pool.append({
-                            "step_order": step_num,
-                            "activity": "type_translit",
-                            "target": word_data
-                        })
 
 
 
@@ -465,6 +460,7 @@ class LessonSession:
                 """, (assoc_id,)) # Replace 'pair_id' with whatever your PK is named in convo_pairs
                     
                 pair_row = cursor.fetchone()
+
                 if pair_row:
                     p_id, r_id, p_geo, p_eng, r_geo, r_eng = pair_row
                     
@@ -661,9 +657,10 @@ class LessonSession:
         current_card = self.get_next_exercise()
         
         if current_card and "target" in current_card:
-            content_id = current_card["target"].get("id")
+            content_id = current_card["target"].get("id", 0)
             activity_type = current_card.get("activity", "unknown")
-            
+            is_review = current_card.get("is_review_item", False)
+
             # Skip passive study states or setup frames so logs contain pure metrics
             if activity_type not in ["card_intro", "dialogue_passive"] and content_id is not None:
                 # 🌟 CALL THE LOGGER ROUTINE HERE AUTOMATICALLY!
@@ -722,8 +719,8 @@ class LessonSession:
         finally:
             conn.close()
         
-
-    def log_user_response(self, content_id, is_correct, activity_type):
+#
+    def log_user_response(self, content_id, is_correct, activity_type="mc_geo_to_eng", is_review=False):
         """ Saves user metrics and adjusts spaced repetition intervals. """
  
         conn = sqlite3.connect(self.progress_db_path)        
@@ -762,13 +759,22 @@ class LessonSession:
                 old_reps, old_ef, old_interval = srs_row
                 if is_correct:
                     repetitions = old_reps + 1
-                    ease_factor = max(1.3, old_ef + 0.1)
-                    interval_days = 1 if repetitions == 1 else (4 if repetitions == 2 else int(old_interval * ease_factor))
+                    # Sane constraint capping ease limits
+                    ease_factor = min(3.0, max(1.3, old_ef + 0.1))
+                    
+                    # PROTECTION: Only expand intervals exponentially if answering a true SRS Review card.
+                    if is_review:
+                        interval_days = 1 if repetitions == 1 else (6 if repetitions == 2 else int(old_interval * ease_factor))
+                    else:
+                        # Baseline placement for current introductory session items
+                        interval_days = max(1, old_interval)
                 else:
                     repetitions = 0
                     interval_days = 0
                     ease_factor = max(1.3, old_ef - 0.2)
-                
+            
+            # Clamp potential calculation runaways to a logical max boundary of  120
+            interval_days = min(120, interval_days)
             next_date = (datetime.date.today() + datetime.timedelta(days=interval_days)).isoformat()
                 
             # 3. UPSERT INTO REGISTRY
@@ -781,7 +787,7 @@ class LessonSession:
             conn.commit()
                 
         except Exception as e:
-            print(f"❌ DATABASE CRITICAL ERROR: {e}")
+            print(f"❌ Tracking Engine Error: {e}")
         finally:
             conn.close()
 
