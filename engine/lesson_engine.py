@@ -155,6 +155,68 @@ class LessonSession:
 
 
 
+    def _get_convo_distractors(self, correct_response_id, limit=2):
+        """
+        Pulls contextually safe conversational distractors by strictly filtering 
+        for content tagged as 'response' in the tags table.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        distractors = []
+        lesson_id = self._resolve_lesson_id()
+        
+        try:
+            # TIER 1: Pull 'response' tags from the same Unit
+            cursor.execute("""
+                SELECT DISTINCT c.georgian, c.english 
+                FROM content c
+                JOIN content_tags ct ON c.content_id = ct.content_id
+                JOIN tags t ON ct.tag_id = t.tag_id
+                JOIN lesson_contents lc ON c.content_id = lc.associated_id
+                JOIN lessons l ON lc.lesson_id = l.lesson_id
+                WHERE t.name = 'response' 
+                  AND l.unit_id = (SELECT unit_id FROM lessons WHERE lesson_id = ?)
+                  AND c.content_id != ?
+                ORDER BY RANDOM() LIMIT ?
+            """, (lesson_id, correct_response_id, limit))
+            
+            distractors.extend(cursor.fetchall())
+            
+            # TIER 2: Global Fallback for 'response' tags
+            if len(distractors) < limit:
+                needed = limit - len(distractors)
+                picked_geo = [row[0] for row in distractors]
+                
+                query = """
+                    SELECT DISTINCT c.georgian, c.english 
+                    FROM content c
+                    JOIN content_tags ct ON c.content_id = ct.content_id
+                    JOIN tags t ON ct.tag_id = t.tag_id
+                    WHERE t.name = 'response' AND c.content_id != ?
+                """
+                params = [correct_response_id]
+                
+                if picked_geo:
+                    placeholders = ','.join(['?'] * len(picked_geo))
+                    query += f" AND c.georgian NOT IN ({placeholders})"
+                    params.extend(picked_geo)
+                    
+                query += " ORDER BY RANDOM() LIMIT ?"
+                params.append(needed)
+                
+                cursor.execute(query, params)
+                distractors.extend(cursor.fetchall())
+                
+        except Exception as e:
+            print(f"⚠️ Convo distractor parsing error: {e}")
+        finally:
+            conn.close()
+            
+        return distractors[:limit]
+
+
+
+
 
     def get_dialogue_lines(self, dialogue_id):
         """Fetches the full script lines using your clean relational IDs."""
@@ -317,6 +379,7 @@ class LessonSession:
 
         final_queue = []
         activity_pool = []
+        vocab_buffer = []
         
         for step_num, comp_type, assoc_id in raw_steps:
             if comp_type == 'monologue':
@@ -330,57 +393,193 @@ class LessonSession:
                     word_data = {"id": c_id, "geo": geo, "eng": eng, "trans": display_trans}                    
                     
                     distractors = self._get_distractors(word_data["id"], limit=2)
+                    vocab_buffer.append(word_data) # Save for matrix
                     
+                    # --- ADDING THE NEW BLUEPRINT ACTIVITIES ---
                 
-                    # Applying all interactive testing activity blueprint dynamically
+                    # 1. Receptive & Recognition
                     activity_pool.append({
                         "step_order": step_num,
                         "activity": "mc_geo_to_eng",
                         "target": word_data,
                         "distractors": [d[0] for d in distractors]
+                        # English distractors
                     })
                     activity_pool.append({
                         "step_order": step_num,
                         "activity": "mc_eng_to_geo",
                         "target": word_data,
                         "distractors": [d[1] for d in distractors]
+                        # Georgian distractors
                     })
+
+
+                    # 2. Audio Training
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "audio_mc_to_eng",
+                        "target": word_data,
+                        "distractors": [d[0] for d in distractors]
+                    })
+
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "audio_mc_to_geo",
+                        "target": word_data,
+                        "distractors": [d[1] for d in distractors] # Georgian distractors
+                    })
+
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "audio_dictation",
+                        "target": word_data
+                    })
+
+
+                    # 3. Production & Input
                     activity_pool.append({
                         "step_order": step_num,
                         "activity": "type_georgian",
                         "target": word_data
+                    })
+                    # Only inject translit typing if they haven't mastered it
+                    if display_trans:
+                        activity_pool.append({
+                            "step_order": step_num,
+                            "activity": "type_translit",
+                            "target": word_data
+                        })
+
+
+
+            elif comp_type == 'convo_pair':
+                # Fetch the Prompt and the Correct Response IDs from convo_pairs table
+                # Here, assoc_id in lesson_contents represents the primary key of the convo_pair row
+                cursor.execute("""
+                    SELECT cp.prompt_id, cp.response_id, 
+                            p.georgian, p.english, r.georgian, r.english
+                    FROM convo_pairs cp
+                    JOIN content p ON cp.prompt_id = p.content_id
+                    JOIN content r ON cp.response_id = r.content_id
+                    WHERE cp.pair_id = ? 
+                """, (assoc_id,)) # Replace 'pair_id' with whatever your PK is named in convo_pairs
+                    
+                pair_row = cursor.fetchone()
+                if pair_row:
+                    p_id, r_id, p_geo, p_eng, r_geo, r_eng = pair_row
+                    
+                    # Fetch safe 'response' distractors using the new method
+                    convo_distractors = self._get_convo_distractors(r_id, limit=2)
+                        
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "mc_geo_pair_geo",
+                        "target": {
+                            "prompt_geo": p_geo,
+                            "prompt_eng": p_eng,
+                            "correct_geo": r_geo,
+                            "correct_eng": r_eng
+                        },
+                        # Distractors payload only needs the Georgian text
+                        "distractors": [d[0] for d in convo_distractors] 
                     })
 
 
 
                     
             elif comp_type == 'dialogue':
+                # --- GENERATE MATRIX BEFORE DIALOGUE ---
+                # Group our buffered words into sets of 3 for the Match Matrix
+                while len(vocab_buffer) >= 3:
+                    matrix_targets = [vocab_buffer.pop(0) for _ in range(3)]
+                    activity_pool.append({
+                        "step_order": step_num,
+                        "activity": "match_matrix_3x3",
+                        "targets": matrix_targets # Contains 3 words!
+                    })
+
                 # Shuffle vocab before hitting a dialogue checkpoint
                 random.shuffle(activity_pool)
                 final_queue.extend(activity_pool)
                 activity_pool = [] # Clear the pool for words appearing after the dialogue
-
+                # vocab_buffer = [] # Clear buffer
 
                 # Insert the passive dialogue study frame at its exact chronological milestone position                
                 cursor.execute("SELECT dialogue_id, internal_code FROM dialogues WHERE dialogue_id = ?", (assoc_id,))
                 diag_row = cursor.fetchone()
                 if diag_row:
-                    dialogue_data = {"id": diag_row[0], "code": diag_row[1]}
+                    dialogue_id = diag_row[0]
+                    dialogue_data = {"id": dialogue_id, "code": diag_row[1]}
+
                     final_queue.append({
                         "step_order": step_num,
                         "activity": "dialogue_passive",
                         "target": dialogue_data
                     })
+                
+                # Fetch all lines of this dialogue to generate dynamic questions
+                    lines = self.get_dialogue_lines(dialogue_id)
+                    
+                    if len(lines) >= 2:
+                        # 2. Dialogue Roleplay MC
+                        # Hide the LAST line of the dialogue. Ask the user to complete it.
+                        last_line = lines[-1] 
+                        speaker, geo, trans, eng = last_line
+                        
+                        # We use convo distractors to get plausible sounding alternative responses
+                        # We need the content_id of this line to get perfect distractors, 
+                        # but for a dynamic generation fallback, we can pull random responses
+                        roleplay_distractors = self._get_convo_distractors(correct_response_id=0, limit=2)
+
+                        final_queue.append({
+                            "step_order": step_num + 0.1, # Just to keep it ordered right after passive
+                            "activity": "dialogue_roleplay_mc",
+                            "target": {
+                                "speaker": speaker,
+                                "correct_geo": geo,
+                                "context_eng": eng
+                            },
+                            "distractors": [d[0] for d in roleplay_distractors]
+                        })
+
+                        # 3. Dialogue Context MC
+                        # Pick a random line from the dialogue and test its meaning in context
+                        random_line = random.choice(lines)
+                        _, context_geo, _, context_eng = random_line
+                        
+                        # Grab some random English distractors globally
+                        cursor.execute("SELECT english FROM content WHERE english != ? ORDER BY RANDOM() LIMIT 2", (context_eng,))
+                        context_distractors = [row[0] for row in cursor.fetchall()]
+
+                        final_queue.append({
+                            "step_order": step_num + 0.2,
+                            "activity": "dialogue_context_mc",
+                            "target": {
+                                "quote_geo": context_geo,
+                                "correct_eng": context_eng
+                            },
+                            "distractors": context_distractors
+                        })
+
+                
                     
         conn.close()
 
-        # Flush out any remaining vocabulary variants left in the practice pool
+        # Flush remaining matrix variants at the end of the lesson
+        while len(vocab_buffer) >= 3:
+            matrix_targets = [vocab_buffer.pop(0) for _ in range(3)]
+            activity_pool.append({
+                "step_order": 999,
+                "activity": "match_matrix_3x3",
+                "targets": matrix_targets 
+            })
+
         random.shuffle(activity_pool)
         final_queue.extend(activity_pool)
 
-        # Inject personalized spaced repetition logs. logs to the front of the session deck.
         self.queue = self._inject_srs_reviews(final_queue)   
         self.total_exercises = len(self.queue)
+
 
 
 
@@ -590,7 +789,6 @@ class LessonSession:
 
 
 
-
 # ==========================================
 # 4. TERMINAL PLAYBACK HARNESS (TEST RIG)
 # ========================================
@@ -610,7 +808,9 @@ def run_terminal_lesson(session):
             break
             
         activity = card["activity"]
-        target = card["target"]
+
+        target = card.get("target")
+        targets = card.get("targets")
         
         print("\n" + "-"*30)
         
@@ -630,7 +830,8 @@ def run_terminal_lesson(session):
             # Verify if their chosen string matches the target English translation
             idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
             is_correct = (idx != -1 and options[idx] == target["eng"])
-            
+
+
         elif activity == "audio_mc_to_geo":
             print(f"🔊 LISTENING MC (Simulated Audio Trigger)")
             print(f"[AUDIO FILE PLAYING]: '{target['geo']}' Pronunciation Guide")
@@ -646,6 +847,7 @@ def run_terminal_lesson(session):
             idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
             is_correct = (idx != -1 and options[idx] == target["geo"])
 
+
         elif activity == "type_georgian":
             print(f"⌨️ PRODUCTION CRITICAL (Type in Georgian Script)")
             print(f"English Meaning: \033[1;33m{target['eng']}\033[0m")
@@ -654,6 +856,7 @@ def run_terminal_lesson(session):
             ans = input("Type Georgian characters: ").strip()
             # Basic sanitization removing trailing spaces/punctuation comparisons
             is_correct = (ans.replace("!","").replace(".","") == target["geo"].replace("!","").replace(".",""))
+
 
         elif activity == "dialogue_passive":
             print(f"💬 DIALOGUE STUDY COMPONENT: [{target['code']}]")
@@ -671,6 +874,7 @@ def run_terminal_lesson(session):
             input("\nPress [ENTER] when you are finished reading the conversation to continue...")
             is_correct = True
 
+
         elif activity == "card_intro":
             print(f"⚠️ REVIEW BUFFER CARD (Study the details carefully!)")
             print(f"  🇬🇪 Georgian:       {target['geo']}")
@@ -678,6 +882,115 @@ def run_terminal_lesson(session):
             print(f"  🇬🇧 English:        {target['eng']}")
             input("\nPress [ENTER] to acknowledge and re-queue the test module...")
             is_correct = True # Review acknowledgement steps always pass forward
+
+
+        elif activity == "mc_eng_to_geo":
+            print(f"📝 MULTIPLE CHOICE (Eng -> Geo)")
+            print(f"English Word:  \033[1;33m{target['eng']}\033[0m")
+            options = [target["geo"]] + card["distractors"]
+            random.shuffle(options)
+            for i, opt in enumerate(options, 1):
+                print(f"  [{i}] {opt}")
+            ans = input("Your Choice (1-3): ").strip()
+            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
+            is_correct = (idx != -1 and options[idx] == target["geo"])
+
+
+        elif activity == "type_translit":
+            print(f"⌨️ ACOUSTIC FAMILIARITY (Type Latin Transliteration)")
+            print(f"Georgian: \033[1;36m{target['geo']}\033[0m ({target['eng']})")
+            ans = input("Type pronunciation (Transliteration): ").strip().lower()
+            is_correct = (ans == target["trans"].lower())
+
+
+        elif activity == "audio_mc_to_eng":
+            print(f"🔊 LISTENING MC (Audio -> Eng)")
+            print(f"[AUDIO FILE PLAYING]: '{target['geo']}'")
+            options = [target["eng"]] + card["distractors"]
+            random.shuffle(options)
+            for i, opt in enumerate(options, 1):
+                print(f"  [{i}] {opt}")
+            ans = input("Your Choice (1-3): ").strip()
+            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
+            is_correct = (idx != -1 and options[idx] == target["eng"])
+
+
+        elif activity == "audio_dictation":
+            print(f"🔊 AUDIO DICTATION (Listen & Type)")
+            print(f"[AUDIO FILE PLAYING]: '{target['geo']}'")
+            ans = input("Type the Georgian script you heard: ").strip()
+            is_correct = (ans.replace("!","").replace(".","") == target["geo"].replace("!","").replace(".",""))
+
+
+        elif activity == "match_matrix_3x3":
+            print(f"🧩 MATCH MATRIX 3x3 (Clear the board!)")
+            
+            geo_list = [t['geo'] for t in targets]
+            eng_list = [t['eng'] for t in targets]
+            random.shuffle(geo_list)
+            random.shuffle(eng_list)
+            
+            print("  GEORGIAN COLUMN           ENGLISH COLUMN")
+            for i in range(3):
+                print(f"  {i+1}. {geo_list[i]:<20} {i+4}. {eng_list[i]}")
+                
+            ans = input("Type correct pairs (e.g., '1-5, 2-4, 3-6'): ").strip()
+            # In a GUI this will be tap-to-match. For the terminal test rig, we'll auto-pass it for now.
+            is_correct = True
+
+
+        elif activity == "mc_geo_pair_geo":
+            print(f"🗣️  CONVERSATIONAL PAIRING (Contextual Response)")
+            print(f"Prompt Question: \033[1;36m{target['prompt_geo']}\033[0m")
+            print(f"Meaning:         ({target['prompt_eng']})")
+            print("-" * 20)
+            
+            options = [target["correct_geo"]] + card["distractors"]
+            random.shuffle(options)
+            
+            for i, opt in enumerate(options, 1):
+                print(f"  [{i}] {opt}")
+                
+            ans = input("Choose the best response (1-3): ").strip()
+            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
+            is_correct = (idx != -1 and options[idx] == target["correct_geo"])
+
+
+
+        elif activity == "dialogue_roleplay_mc":
+            print(f"🎭 DIALOGUE ROLEPLAY (Complete the Conversation)")
+            print(f"Speaker {target['speaker']} is about to speak.")
+            print(f"(Context Hint: They want to express '{target['context_eng']}')")
+            print("-" * 20)
+            
+            options = [target["correct_geo"]] + card["distractors"]
+            random.shuffle(options)
+            
+            for i, opt in enumerate(options, 1):
+                print(f"  [{i}] {opt}")
+                
+            ans = input(f"Choose what Speaker {target['speaker']} says (1-3): ").strip()
+            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
+            is_correct = (idx != -1 and options[idx] == target["correct_geo"])
+
+
+
+        elif activity == "dialogue_context_mc":
+            print(f"🧠 CONTEXT CHECK (What did this mean in the dialogue?)")
+            print(f"Quote: \033[1;36m\"{target['quote_geo']}\"\033[0m")
+            print("-" * 20)
+            
+            options = [target["correct_eng"]] + card["distractors"]
+            random.shuffle(options)
+            
+            for i, opt in enumerate(options, 1):
+                print(f"  [{i}] {opt}")
+                
+            ans = input("What does this translate to? (1-3): ").strip()
+            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
+            is_correct = (idx != -1 and options[idx] == target["correct_eng"])
+
+
 
         # --- EVALUATION LOGIC SUBMISSION ---
         res = session.submit_answer(is_correct)
