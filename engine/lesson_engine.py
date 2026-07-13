@@ -299,6 +299,81 @@ class LessonSession:
             return min(self.completed_count / self.total_exercises, 1.0)
     
 
+
+
+    def _space_out_activities(self, activities):
+        """
+        Enforces absolute variance: guarantees consecutive exercises never 
+        test the exact same vocabulary or phrase item ID.
+        """
+        if len(activities) <= 1:
+            return activities
+
+        random.shuffle(activities)
+        spaced_list = []
+        leftovers = []
+        
+        while activities:
+            card = activities.pop(0)
+            card_id = card.get("content_id")
+            last_id = spaced_list[-1].get("content_id") if spaced_list else None
+            
+            if card_id != last_id:
+                spaced_list.append(card)
+            else:
+                found_idx = -1
+                for idx, next_card in enumerate(activities):
+                    if next_card.get("content_id") != last_id:
+                        found_idx = idx
+                        break
+                
+                if found_idx != -1:
+                    spaced_list.append(activities.pop(found_idx))
+                    activities.insert(0, card)
+                else:
+                    leftovers.append(card)
+        
+        for card in leftovers:
+            card_id = card.get("content_id")
+            inserted = False
+            for idx in range(len(spaced_list) + 1):
+                prev_id = spaced_list[idx-1].get("content_id") if idx > 0 else None
+                next_id = spaced_list[idx].get("content_id") if idx < len(spaced_list) else None
+                if card_id != prev_id and card_id != next_id:
+                    spaced_list.insert(idx, card)
+                    inserted = True
+                    break
+            if not inserted:
+                spaced_list.append(card)
+                
+        return spaced_list
+
+
+
+
+    def _safe_stitch_waves(self, ordered_waves):
+        """
+        Stitches separate pedagogical waves together sequentially. If the last card 
+        of Wave 1 matches the first card of Wave 2, it performs a surgical swap to prevent clumping.
+        """
+        stitched_stream = []
+        for wave in ordered_waves:
+            while wave:
+                card = wave.pop(0)
+                if stitched_stream and stitched_stream[-1].get("content_id") == card.get("content_id"):
+                    # Boundary collision detected! Find an alternative item inside the incoming wave
+                    found = False
+                    for i, alternate in enumerate(wave):
+                        if alternate.get("content_id") != stitched_stream[-1].get("content_id"):
+                            stitched_stream.append(wave.pop(i))
+                            wave.insert(0, card)  # Push colliding card back to step forward next
+                            found = True
+                            break
+                    if not found:
+                        stitched_stream.append(card)
+                else:
+                    stitched_stream.append(card)
+        return stitched_stream
     
 
 
@@ -333,9 +408,17 @@ class LessonSession:
         """, (lesson_id,))
         raw_steps = cursor.fetchall()
 
-        final_queue = []
-        activity_pool = []
-        vocab_buffer = []
+
+        # --- REFINED PEDAGOGICAL SUB-BUCKETS ---
+        vocab_w1_recognition = []  # Phase 1: Multiple Choices
+        vocab_w2_audio = []        # Phase 2: Audio Identification
+        vocab_w3_production = []   # Phase 3: Dictation & Native Typing
+        
+        phrase_bucket = []
+        matrix_bucket = []
+        dialogue_bucket = []
+        vocab_buffer = []  # For matrix grouping
+
         
         for step_num, comp_type, assoc_id in raw_steps:
             if comp_type == 'monologue':
@@ -351,17 +434,41 @@ class LessonSession:
                     distractors = self._get_distractors(word_data["id"], limit=2)
                     vocab_buffer.append(word_data) # Save for matrix
                     
+
+                    # Phrase classification branch if length is long
+                    if len(eng.split()) >= 3:
+                        # For long phrase expressions, maintain simple progressive placement
+                        phrase_bucket.append({
+                            "content_id": c_id, 
+                            "step_order": step_num,
+                            "activity": "mc_geo_to_eng", 
+                            "target": word_data, 
+                            "distractors": [d[0] for d in distractors]
+                        })
+                        phrase_bucket.append({
+                            "content_id": c_id, 
+                            "step_order": step_num,
+                            "activity": "type_georgian", 
+                            "target": word_data
+                        })
+                        continue
+
+
                     # --- ADDING THE NEW BLUEPRINT ACTIVITIES ---
                 
-                    # 1. Receptive & Recognition
-                    activity_pool.append({
+                    # --- WAVE DISTRIBUTION FOR CORE VOCABULARY ---
+                    # WAVE 1: RECOGNITION (Exposure & Training Wheels)
+                    
+                    vocab_w1_recognition.append({
+                        "content_id": c_id,
                         "step_order": step_num,
                         "activity": "mc_geo_to_eng",
                         "target": word_data,
                         "distractors": [d[0] for d in distractors]
                         # English distractors
                     })
-                    activity_pool.append({
+                    vocab_w1_recognition.append({
+                        "content_id": c_id,
                         "step_order": step_num,
                         "activity": "mc_eng_to_geo",
                         "target": word_data,
@@ -370,30 +477,34 @@ class LessonSession:
                     })
 
 
-                    # 2. Audio Training
-                    activity_pool.append({
+                    # WAVE 2: AUDIO FAMILIARIZATION (Listening Skills)
+                    vocab_w2_audio.append({
+                        "content_id": c_id,
                         "step_order": step_num,
                         "activity": "audio_mc_to_eng",
                         "target": word_data,
                         "distractors": [d[0] for d in distractors]
                     })
 
-                    activity_pool.append({
+                    vocab_w2_audio.append({
+                        "content_id": c_id,
                         "step_order": step_num,
                         "activity": "audio_mc_to_geo",
                         "target": word_data,
                         "distractors": [d[1] for d in distractors] # Georgian distractors
                     })
 
-                    activity_pool.append({
+                    # WAVE 3: ACTIVE PRODUCTION (High Recall Typing)
+                    vocab_w3_production.append({
+                        "content_id": c_id,
                         "step_order": step_num,
                         "activity": "audio_dictation",
                         "target": word_data
                     })
 
 
-                    # 3. Production & Input
-                    activity_pool.append({
+                    vocab_w3_production.append({
+                        "content_id": c_id,
                         "step_order": step_num,
                         "activity": "type_georgian",
                         "target": word_data
@@ -421,7 +532,8 @@ class LessonSession:
                     # Fetch safe 'response' distractors using the new method
                     convo_distractors = self._get_convo_distractors(r_id, limit=2)
                         
-                    activity_pool.append({
+                    phrase_bucket.append({
+                        "content_id": f"pair_{assoc_id}",
                         "step_order": step_num,
                         "activity": "mc_geo_pair_geo",
                         "target": {
@@ -442,16 +554,17 @@ class LessonSession:
                 # Group our buffered words into sets of 3 for the Match Matrix
                 while len(vocab_buffer) >= 3:
                     matrix_targets = [vocab_buffer.pop(0) for _ in range(3)]
-                    activity_pool.append({
-                        "step_order": step_num,
+                    matrix_bucket.append({
+                        "content_id": "matrix_block",
+                        "step_order": step_num - 0.01,
                         "activity": "match_matrix_3x3",
                         "targets": matrix_targets # Contains 3 words!
                     })
 
                 # Shuffle vocab before hitting a dialogue checkpoint
-                random.shuffle(activity_pool)
-                final_queue.extend(activity_pool)
-                activity_pool = [] # Clear the pool for words appearing after the dialogue
+                #random.shuffle(activity_pool)
+                #final_queue.extend(activity_pool)
+                #activity_pool = [] # Clear the pool for words appearing after the dialogue
 
                 # Insert the passive dialogue study frame at its exact chronological milestone position                
                 cursor.execute("SELECT dialogue_id, internal_code FROM dialogues WHERE dialogue_id = ?", (assoc_id,))
@@ -460,13 +573,14 @@ class LessonSession:
                     dialogue_id = diag_row[0]
                     dialogue_data = {"id": dialogue_id, "code": diag_row[1]}
 
-                    final_queue.append({
+                    dialogue_bucket.append({
+                        "content_id": f"diag_{dialogue_id}",
                         "step_order": step_num,
                         "activity": "dialogue_passive",
                         "target": dialogue_data
                     })
                 
-                # Fetch all lines of this dialogue to generate dynamic questions
+                    # Fetch all lines of this dialogue to generate dynamic questions
                     lines = self.get_dialogue_lines(dialogue_id)
                     
                     if len(lines) >= 2:
@@ -480,7 +594,8 @@ class LessonSession:
                         # but for a dynamic generation fallback, we can pull random responses
                         roleplay_distractors = self._get_convo_distractors(correct_response_id=0, limit=2)
 
-                        final_queue.append({
+                        dialogue_bucket.append({
+                            "content_id": f"diag_{dialogue_id}_rp",
                             "step_order": step_num + 0.1, # Just to keep it ordered right after passive
                             "activity": "dialogue_roleplay_mc",
                             "target": {
@@ -500,7 +615,8 @@ class LessonSession:
                         cursor.execute("SELECT english FROM content WHERE english != ? ORDER BY RANDOM() LIMIT 2", (context_eng,))
                         context_distractors = [row[0] for row in cursor.fetchall()]
 
-                        final_queue.append({
+                        dialogue_bucket.append({
+                            "content_id": f"diag_{dialogue_id}_comp",
                             "step_order": step_num + 0.2,
                             "activity": "dialogue_context_mc",
                             "target": {
@@ -517,14 +633,26 @@ class LessonSession:
         # Flush remaining matrix variants at the end of the lesson
         while len(vocab_buffer) >= 3:
             matrix_targets = [vocab_buffer.pop(0) for _ in range(3)]
-            activity_pool.append({
+            matrix_bucket.append({
+                "content_id": "matrix_block",
                 "step_order": 999,
                 "activity": "match_matrix_3x3",
                 "targets": matrix_targets 
             })
 
-        random.shuffle(activity_pool)
-        final_queue.extend(activity_pool)
+        # --- PROCESS WAVES INDIVIDUALLY TO PREVENT CLUMPING ---
+        cleaned_w1 = self._space_out_activities(vocab_w1_recognition)
+        cleaned_w2 = self._space_out_activities(vocab_w2_audio)
+        cleaned_w3 = self._space_out_activities(vocab_w3_production)
+        cleaned_phrases = self._space_out_activities(phrase_bucket)
+
+        # Stitch vocabulary waves securely using the boundary checker
+        ordered_vocab_stream = self._safe_stitch_waves([cleaned_w1, cleaned_w2, cleaned_w3])
+
+        # Combine Vocabs and Phrases into our core learning timeline
+        core_learning_stream = ordered_vocab_stream + cleaned_phrases
+        final_learning_stream = []
+        
 
         # --- SMART REVIEW INTERLEAVING SYSTEM ---
         urgent_ids = self._get_urgent_review_items(limit=3)
@@ -535,33 +663,30 @@ class LessonSession:
             content_conn = sqlite3.connect(self.db_path)
             content_cursor = content_conn.cursor()
             
-            interleaved_queue = []
             new_card_counter = 0
-            
-            for card in final_queue:
-                interleaved_queue.append(card)
-                # Count functional learning steps, ignoring non-interactive intro screens
+            for card in core_learning_stream:
+                final_learning_stream.append(card)
                 if card.get("activity") not in ["card_intro", "dialogue_passive"]:
                     new_card_counter += 1
                 
-                # Every 3 active exercises, sneak in an overdue review item if available
+                # Every 3 learning steps, seamlessly insert an overdue review card
                 if new_card_counter >= 3 and urgent_ids:
                     rev_id = urgent_ids.pop(0)
-                    
                     content_cursor.execute("SELECT english, georgian, transliteration FROM content WHERE content_id = ?", (rev_id,))
                     word_row = content_cursor.fetchone()
                     
                     if word_row:
                         eng, geo, trans = word_row
-                        # Inject a typing exercise card marked as an official review item
-                        interleaved_queue.append({
+                        final_learning_stream.append({
+                            "content_id": rev_id,
                             "step_order": card.get("step_order", 0) + 0.05,
                             "activity": "type_georgian",
                             "is_review_item": True,
                             "target": {"id": rev_id, "english": eng, "georgian": geo, "translit": trans}
                         })
-                    new_card_counter = 0 # Reset interval counter
-            
+                    new_card_counter = 0
+
+
             # Catch any leftover review cards if the lesson was very short
             while urgent_ids:
                 rev_id = urgent_ids.pop(0)
@@ -569,16 +694,21 @@ class LessonSession:
                 word_row = content_cursor.fetchone()
                 if word_row:
                     eng, geo, trans = word_row
-                    interleaved_queue.append({
-                        "step_order": 999, "activity": "type_georgian", "is_review_item": True,
+                    final_learning_stream.append({
+                        "content_id": rev_id,
+                        "step_order": 999, 
+                        "activity": "type_georgian", 
+                        "is_review_item": True,
                         "target": {"id": rev_id, "english": eng, "georgian": geo, "translit": trans}
                     })
                     
             content_conn.close()
-            final_queue = interleaved_queue
+        else:
+            final_learning_stream = core_learning_stream
             
-        # Assign to engine execution queue
-        self.queue = final_queue
+        # --- RIGID SEQUENTIAL CONCATENATION ---
+        # 1. Vocabs & Phrases (with interspersed SRS) -> 2. All Matrix Grids -> 3. Story Dialogues
+        self.queue = final_learning_stream + matrix_bucket + dialogue_bucket
         self.total_exercises = len(self.queue)
 
 
