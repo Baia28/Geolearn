@@ -2,6 +2,7 @@ import sqlite3
 import random
 import os
 import datetime
+import time
 
 class LessonSession:
     #  Default parameters to None to allow 100% automated lesson routing!
@@ -66,8 +67,6 @@ class LessonSession:
     def _get_distractors(self, correct_content_id, limit=2):
         """
         Dynamically generates high-quality distractors.
-        Returns tuples mapped as (english, georgian) so d[0] displays full English words
-        and d[1] satisfies your Georgian script checks on line 241.
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -268,77 +267,31 @@ class LessonSession:
 
 
 
-
-    def _inject_srs_reviews(self, base_playlist):
-        """
-        Scans for overdue flashcards and weaves them into the front of the active lesson.
-        """
-
-        progress_conn = sqlite3.connect(self.progress_db_path)
-        progress_cursor = progress_conn.cursor()
+    def _get_urgent_review_items(self, limit=3):
+        """Fetches top overdue review items from the registry."""
+        conn = sqlite3.connect(self.progress_db_path)
+        cursor = conn.cursor()
+        today_str = datetime.date.today().isoformat()
         
-        content_conn = sqlite3.connect(self.db_path)
-        content_cursor = content_conn.cursor()
+        cursor.execute("""
+            SELECT content_id FROM srs_registry 
+            WHERE next_review_date <= ? 
+            ORDER BY ease_factor ASC, mastery_level ASC 
+            LIMIT ?
+        """, (today_str, limit))
         
-        today = datetime.date.today().isoformat()
-        injected_steps = []
-        
-        try:
-            # 1. Find overdue word content IDs
-            progress_cursor.execute("""
-                SELECT content_id FROM srs_registry 
-                WHERE next_review_date <= ?
-                ORDER BY mastery_level ASC, next_review_date ASC
-                LIMIT 3
-            """, (today,))
-            
-            overdue_items = progress_cursor.fetchall()
-            
-            # 2. Fetch the text assets for these words and build review steps
-            for (c_id,) in overdue_items:
-                content_cursor.execute("""
-                    SELECT georgian, transliteration, english FROM content WHERE content_id = ?
-                """, (c_id,))
-                word_res = content_cursor.fetchone()
-                
-                if word_res:
-                    geo, trans, eng = word_res
-                    
-                    # Grab smart distractors for the review question
-                    raw_distractors = self._get_distractors(c_id, limit=2)
-                    
-                    # Formulate an injection activity step object
-                    injected_steps.append({
-                        "step_order": 0, # Denotes system injected review
-                        "activity": "mc_geo_to_eng",  # can be dynamically randomized later
-                        "target": {
-                            "id": c_id,
-                            "geo": geo,
-                            "trans": trans,
-                            "eng": eng,
-                        },
-                        "distractors": [d[0] for d in raw_distractors],
-                        "is_review_item": True # Flagged for your logging telemetry
-                    })
-            if injected_steps:
-                print(f"🧠 SRS Intercept: Injected {len(injected_steps)} real spaced review cards.")
-        except Exception as e:
-            print(f"⚠️ SRS Injection failure: {e}")
-        finally:
-            progress_conn.close()
-            content_conn.close()
-            
-        return injected_steps + base_playlist
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
 
 
 
 
 
-    def get_progress_percentage(self, current_step_index):
+    def get_progress_percentage(self):
             """
             Calculates exactly how much green to fill in Flet Progress Bar.
             """
-            total_steps = self.total_excercises
             if self.total_exercises == 0:
                 return 0.0
             
@@ -346,6 +299,7 @@ class LessonSession:
             return min(self.completed_count / self.total_exercises, 1.0)
     
 
+    
 
 
 
@@ -498,7 +452,6 @@ class LessonSession:
                 random.shuffle(activity_pool)
                 final_queue.extend(activity_pool)
                 activity_pool = [] # Clear the pool for words appearing after the dialogue
-                # vocab_buffer = [] # Clear buffer
 
                 # Insert the passive dialogue study frame at its exact chronological milestone position                
                 cursor.execute("SELECT dialogue_id, internal_code FROM dialogues WHERE dialogue_id = ?", (assoc_id,))
@@ -573,7 +526,59 @@ class LessonSession:
         random.shuffle(activity_pool)
         final_queue.extend(activity_pool)
 
-        self.queue = self._inject_srs_reviews(final_queue)   
+        # --- SMART REVIEW INTERLEAVING SYSTEM ---
+        urgent_ids = self._get_urgent_review_items(limit=3)
+        
+        if urgent_ids:
+            # Open content database to quickly load the text for the review words
+            print(f"🧠 SRS Intercept: Interleaving {len(urgent_ids)} active review challenges...")
+            content_conn = sqlite3.connect(self.db_path)
+            content_cursor = content_conn.cursor()
+            
+            interleaved_queue = []
+            new_card_counter = 0
+            
+            for card in final_queue:
+                interleaved_queue.append(card)
+                # Count functional learning steps, ignoring non-interactive intro screens
+                if card.get("activity") not in ["card_intro", "dialogue_passive"]:
+                    new_card_counter += 1
+                
+                # Every 3 active exercises, sneak in an overdue review item if available
+                if new_card_counter >= 3 and urgent_ids:
+                    rev_id = urgent_ids.pop(0)
+                    
+                    content_cursor.execute("SELECT english, georgian, transliteration FROM content WHERE content_id = ?", (rev_id,))
+                    word_row = content_cursor.fetchone()
+                    
+                    if word_row:
+                        eng, geo, trans = word_row
+                        # Inject a typing exercise card marked as an official review item
+                        interleaved_queue.append({
+                            "step_order": card.get("step_order", 0) + 0.05,
+                            "activity": "type_georgian",
+                            "is_review_item": True,
+                            "target": {"id": rev_id, "english": eng, "georgian": geo, "translit": trans}
+                        })
+                    new_card_counter = 0 # Reset interval counter
+            
+            # Catch any leftover review cards if the lesson was very short
+            while urgent_ids:
+                rev_id = urgent_ids.pop(0)
+                content_cursor.execute("SELECT english, georgian, translit FROM content WHERE id = ?", (rev_id,))
+                word_row = content_cursor.fetchone()
+                if word_row:
+                    eng, geo, trans = word_row
+                    interleaved_queue.append({
+                        "step_order": 999, "activity": "type_georgian", "is_review_item": True,
+                        "target": {"id": rev_id, "english": eng, "georgian": geo, "translit": trans}
+                    })
+                    
+            content_conn.close()
+            final_queue = interleaved_queue
+            
+        # Assign to engine execution queue
+        self.queue = final_queue
         self.total_exercises = len(self.queue)
 
 
@@ -642,6 +647,8 @@ class LessonSession:
         """Peeks at the top card in the queue."""
         if not self.queue:
             return None
+        # Start the high-precision stopwatch right before returning the active card
+        self.card_start_time = time.perf_counter()
         return self.queue[0]
 
 
@@ -652,7 +659,11 @@ class LessonSession:
         Processes an answer submission, updates the queue, and automatically logs 
         telemetry and SRS updates directly into user_progress.db.
         """
-        # 1. Grab the active card before mutating the queue or state
+        # Stop the clock instantly
+        elapsed_time = time.perf_counter() - getattr(self, "card_start_time", time.perf_counter())
+        latency_ms = int(elapsed_time * 1000)
+
+        # Grab the active card before mutating the queue or state
         # (Adapting to how your engine tracks the current active card index/object)
         current_card = self.get_next_exercise()
         
@@ -664,7 +675,7 @@ class LessonSession:
             # Skip passive study states or setup frames so logs contain pure metrics
             if activity_type not in ["card_intro", "dialogue_passive"] and content_id is not None:
                 # 🌟 CALL THE LOGGER ROUTINE HERE AUTOMATICALLY!
-                self.log_user_response(content_id, is_correct, activity_type)
+                self.log_user_response(content_id, is_correct, activity_type, is_review=is_review, latency_ms=latency_ms)
 
         if is_correct:
             # Answered perfectly! Permanently cycle it off the active stack
@@ -687,12 +698,69 @@ class LessonSession:
         
         # Calculate matching fraction metrics for your test rig's `res['progress']` key
         total = max(self.total_exercises, 1)
-        current_progress = self.completed_count / total
-        
-        return {
-            "status": status,
-            "progress": max(0.0, min(current_progress, 1.0))
-        }
+        return {"status": status, "progress": max(0.0, min(self.completed_count / total, 1.0))}
+
+    def log_user_response(self, content_id, is_correct, activity_type="mc_geo_to_eng", is_review=False, latency_ms=0):
+        conn = sqlite3.connect(self.progress_db_path)        
+        cursor = conn.cursor()
+            
+        try:
+            # Added response_latency_ms field to schema automatically
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_activity_log (
+                    log_id INTEGER PRIMARY KEY AUTOINCREMENT, phase_num INTEGER, unit_num INTEGER, 
+                    lesson_num INTEGER, activity_type TEXT, content_id INTEGER, is_correct INTEGER,
+                    is_review_item INTEGER, response_latency_ms INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS srs_registry (
+                    content_id INTEGER PRIMARY KEY, mastery_level INTEGER, ease_factor REAL, 
+                    repetitions INTEGER, interval_days INTEGER, next_review_date TEXT
+                )
+            """)
+
+            # Insert the latency record directly
+            cursor.execute("""
+                INSERT INTO research_activity_log (phase_num, unit_num, lesson_num, activity_type, content_id, is_correct, is_review_item, response_latency_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (self.phase_num, self.unit_num, self.lesson_num, activity_type, content_id, 1 if is_correct else 0, 1 if is_review else 0, latency_ms))
+
+            if content_id and content_id > 0:
+                cursor.execute("SELECT repetitions, ease_factor, interval_days FROM srs_registry WHERE content_id = ?", (content_id,))
+                srs_row = cursor.fetchone()
+                    
+                if not srs_row:
+                    repetitions = 1 if is_correct else 0
+                    ease_factor = 2.5
+                    interval_days = 1 if is_correct else 0
+                else:
+                    old_reps, old_ef, old_interval = srs_row
+                    if is_correct:
+                        repetitions = old_reps + 1
+                        ease_factor = min(3.0, max(1.3, old_ef + 0.1))
+                        if is_review:
+                            interval_days = 1 if repetitions == 1 else (6 if repetitions == 2 else int(old_interval * ease_factor))
+                        else:
+                            interval_days = max(1, old_interval)
+                    else:
+                        repetitions = 0
+                        interval_days = 0
+                        ease_factor = max(1.3, old_ef - 0.2)
+                    
+                interval_days = min(120, interval_days)
+                next_date = (datetime.date.today() + datetime.timedelta(days=interval_days)).isoformat()
+                    
+                cursor.execute("""
+                    INSERT OR REPLACE INTO srs_registry (content_id, mastery_level, ease_factor, repetitions, interval_days, next_review_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (content_id, repetitions, ease_factor, repetitions, interval_days, next_date))
+                
+            conn.commit()
+        except Exception as e:
+            print(f"❌ Tracking Engine Error: {e}")
+        finally:
+            conn.close()
     
 
     def _mark_lesson_completed(self):
@@ -719,299 +787,3 @@ class LessonSession:
         finally:
             conn.close()
         
-#
-    def log_user_response(self, content_id, is_correct, activity_type="mc_geo_to_eng", is_review=False):
-        """ Saves user metrics and adjusts spaced repetition intervals. """
- 
-        conn = sqlite3.connect(self.progress_db_path)        
-        cursor = conn.cursor()
-            
-        try:    
-            # 1. Activity Log
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS research_activity_log (
-                    log_id INTEGER PRIMARY KEY AUTOINCREMENT, phase_num INTEGER, unit_num INTEGER, 
-                    lesson_num INTEGER, activity_type TEXT, content_id INTEGER, is_correct INTEGER
-                )
-            """)
-            cursor.execute("""
-                INSERT INTO research_activity_log 
-                (phase_num, unit_num, lesson_num, activity_type, content_id, is_correct)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (self.phase_num, self.unit_num, self.lesson_num, activity_type, content_id, 1 if is_correct else 0))
-
-            # 2. SRS Registry
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS srs_registry (
-                    content_id INTEGER PRIMARY KEY, mastery_level INTEGER, ease_factor REAL, 
-                    repetitions INTEGER, interval_days INTEGER, next_review_date TEXT
-                )
-            """)
-            #to calculate srs
-            cursor.execute("SELECT repetitions, ease_factor, interval_days FROM srs_registry WHERE content_id = ?", (content_id,))
-            srs_row = cursor.fetchone()
-                
-            if not srs_row:
-                repetitions = 1 if is_correct else 0
-                ease_factor = 2.5
-                interval_days = 1 if is_correct else 0
-            else:
-                old_reps, old_ef, old_interval = srs_row
-                if is_correct:
-                    repetitions = old_reps + 1
-                    # Sane constraint capping ease limits
-                    ease_factor = min(3.0, max(1.3, old_ef + 0.1))
-                    
-                    # PROTECTION: Only expand intervals exponentially if answering a true SRS Review card.
-                    if is_review:
-                        interval_days = 1 if repetitions == 1 else (6 if repetitions == 2 else int(old_interval * ease_factor))
-                    else:
-                        # Baseline placement for current introductory session items
-                        interval_days = max(1, old_interval)
-                else:
-                    repetitions = 0
-                    interval_days = 0
-                    ease_factor = max(1.3, old_ef - 0.2)
-            
-            # Clamp potential calculation runaways to a logical max boundary of  120
-            interval_days = min(120, interval_days)
-            next_date = (datetime.date.today() + datetime.timedelta(days=interval_days)).isoformat()
-                
-            # 3. UPSERT INTO REGISTRY
-            cursor.execute("""
-                INSERT OR REPLACE INTO srs_registry 
-                (content_id, mastery_level, ease_factor, repetitions, interval_days, next_review_date)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (content_id, repetitions, ease_factor, repetitions, interval_days, next_date))
-                
-            conn.commit()
-                
-        except Exception as e:
-            print(f"❌ Tracking Engine Error: {e}")
-        finally:
-            conn.close()
-
-
-
-
-
-# ==========================================
-# 4. TERMINAL PLAYBACK HARNESS (TEST RIG)
-# ========================================
-def run_terminal_lesson(session):
-    """Accepts a fully initialized LessonSession object and runs it."""
-    print("=" * 50)
-    print(f"🌟 STARTING TERMINAL PLAYTEST FOR LESSON 🌟")
-    print(f"📍 Coordinates: Phase {session.phase_num} | Unit {session.unit_num} | Lesson {session.lesson_num}")
-    print(f"Total Master Exercises Generated: {session.total_exercises}")
-    print("=" * 50)
-
-
-    while True:
-        card = session.get_next_exercise()
-        if not card:
-            print("\n🎉 VICTORY! Lesson Cleared Successfully with 100% Mastery!")
-            break
-            
-        activity = card["activity"]
-
-        target = card.get("target")
-        targets = card.get("targets")
-        
-        print("\n" + "-"*30)
-        
-        # --- SCREEN RENDERER SIMULATOR ---
-        if activity == "mc_geo_to_eng":
-            print(f"📝 MULTIPLE CHOICE (Geo -> Eng)")
-            print(f"Georgian Word:  \033[1;36m{target['geo']}\033[0m")
-            
-            # Combine target and distractors, then shuffle options safely
-            options = [target["eng"]] + card["distractors"]
-            random.shuffle(options)
-            
-            for i, opt in enumerate(options, 1):
-                print(f"  [{i}] {opt}")
-                
-            ans = input("Your Choice (1-3): ").strip()
-            # Verify if their chosen string matches the target English translation
-            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
-            is_correct = (idx != -1 and options[idx] == target["eng"])
-
-
-        elif activity == "audio_mc_to_geo":
-            print(f"🔊 LISTENING MC (Simulated Audio Trigger)")
-            print(f"[AUDIO FILE PLAYING]: '{target['geo']}' Pronunciation Guide")
-            print(f"Question: Match what you heard to the correct script:")
-            
-            options = [target["geo"]] + card["distractors"]
-            random.shuffle(options)
-            
-            for i, opt in enumerate(options, 1):
-                print(f"  [{i}] {opt}")
-                
-            ans = input("Your Choice (1-3): ").strip()
-            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
-            is_correct = (idx != -1 and options[idx] == target["geo"])
-
-
-        elif activity == "type_georgian":
-            print(f"⌨️ PRODUCTION CRITICAL (Type in Georgian Script)")
-            print(f"English Meaning: \033[1;33m{target['eng']}\033[0m")
-            print(f"Hint Transliteration: {target['trans']}")
-            
-            ans = input("Type Georgian characters: ").strip()
-            # Basic sanitization removing trailing spaces/punctuation comparisons
-            is_correct = (ans.replace("!","").replace(".","") == target["geo"].replace("!","").replace(".",""))
-
-
-        elif activity == "dialogue_passive":
-            print(f"💬 DIALOGUE STUDY COMPONENT: [{target['code']}]")
-            lines = session.get_dialogue_lines(target["id"])
-            if not lines:
-                print("  [Dialogue script content empty or dialogue_lines table unpopulated]")
-                    
-            for speaker, geo, trans, eng in lines:
-                # Fallback filters to handle any minor punctuation mismatches gracefully
-                display_trans = f" ({trans})" if trans else ""
-                display_eng = f" -> {eng}" if eng else " -> [Translation Match Pending]"
-                        
-                print(f"  Speaker {speaker}: {geo}{display_trans}{display_eng}")
-                        
-            input("\nPress [ENTER] when you are finished reading the conversation to continue...")
-            is_correct = True
-
-
-        elif activity == "card_intro":
-            print(f"⚠️ REVIEW BUFFER CARD (Study the details carefully!)")
-            print(f"  🇬🇪 Georgian:       {target['geo']}")
-            print(f"  🔤 Transliteration: {target['trans']}")
-            print(f"  🇬🇧 English:        {target['eng']}")
-            input("\nPress [ENTER] to acknowledge and re-queue the test module...")
-            is_correct = True # Review acknowledgement steps always pass forward
-
-
-        elif activity == "mc_eng_to_geo":
-            print(f"📝 MULTIPLE CHOICE (Eng -> Geo)")
-            print(f"English Word:  \033[1;33m{target['eng']}\033[0m")
-            options = [target["geo"]] + card["distractors"]
-            random.shuffle(options)
-            for i, opt in enumerate(options, 1):
-                print(f"  [{i}] {opt}")
-            ans = input("Your Choice (1-3): ").strip()
-            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
-            is_correct = (idx != -1 and options[idx] == target["geo"])
-
-
-        elif activity == "type_translit":
-            print(f"⌨️ ACOUSTIC FAMILIARITY (Type Latin Transliteration)")
-            print(f"Georgian: \033[1;36m{target['geo']}\033[0m ({target['eng']})")
-            ans = input("Type pronunciation (Transliteration): ").strip().lower()
-            is_correct = (ans == target["trans"].lower())
-
-
-        elif activity == "audio_mc_to_eng":
-            print(f"🔊 LISTENING MC (Audio -> Eng)")
-            print(f"[AUDIO FILE PLAYING]: '{target['geo']}'")
-            options = [target["eng"]] + card["distractors"]
-            random.shuffle(options)
-            for i, opt in enumerate(options, 1):
-                print(f"  [{i}] {opt}")
-            ans = input("Your Choice (1-3): ").strip()
-            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
-            is_correct = (idx != -1 and options[idx] == target["eng"])
-
-
-        elif activity == "audio_dictation":
-            print(f"🔊 AUDIO DICTATION (Listen & Type)")
-            print(f"[AUDIO FILE PLAYING]: '{target['geo']}'")
-            ans = input("Type the Georgian script you heard: ").strip()
-            is_correct = (ans.replace("!","").replace(".","") == target["geo"].replace("!","").replace(".",""))
-
-
-        elif activity == "match_matrix_3x3":
-            print(f"🧩 MATCH MATRIX 3x3 (Clear the board!)")
-            
-            geo_list = [t['geo'] for t in targets]
-            eng_list = [t['eng'] for t in targets]
-            random.shuffle(geo_list)
-            random.shuffle(eng_list)
-            
-            print("  GEORGIAN COLUMN           ENGLISH COLUMN")
-            for i in range(3):
-                print(f"  {i+1}. {geo_list[i]:<20} {i+4}. {eng_list[i]}")
-                
-            ans = input("Type correct pairs (e.g., '1-5, 2-4, 3-6'): ").strip()
-            # In a GUI this will be tap-to-match. For the terminal test rig, we'll auto-pass it for now.
-            is_correct = True
-
-
-        elif activity == "mc_geo_pair_geo":
-            print(f"🗣️  CONVERSATIONAL PAIRING (Contextual Response)")
-            print(f"Prompt Question: \033[1;36m{target['prompt_geo']}\033[0m")
-            print(f"Meaning:         ({target['prompt_eng']})")
-            print("-" * 20)
-            
-            options = [target["correct_geo"]] + card["distractors"]
-            random.shuffle(options)
-            
-            for i, opt in enumerate(options, 1):
-                print(f"  [{i}] {opt}")
-                
-            ans = input("Choose the best response (1-3): ").strip()
-            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
-            is_correct = (idx != -1 and options[idx] == target["correct_geo"])
-
-
-
-        elif activity == "dialogue_roleplay_mc":
-            print(f"🎭 DIALOGUE ROLEPLAY (Complete the Conversation)")
-            print(f"Speaker {target['speaker']} is about to speak.")
-            print(f"(Context Hint: They want to express '{target['context_eng']}')")
-            print("-" * 20)
-            
-            options = [target["correct_geo"]] + card["distractors"]
-            random.shuffle(options)
-            
-            for i, opt in enumerate(options, 1):
-                print(f"  [{i}] {opt}")
-                
-            ans = input(f"Choose what Speaker {target['speaker']} says (1-3): ").strip()
-            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
-            is_correct = (idx != -1 and options[idx] == target["correct_geo"])
-
-
-
-        elif activity == "dialogue_context_mc":
-            print(f"🧠 CONTEXT CHECK (What did this mean in the dialogue?)")
-            print(f"Quote: \033[1;36m\"{target['quote_geo']}\"\033[0m")
-            print("-" * 20)
-            
-            options = [target["correct_eng"]] + card["distractors"]
-            random.shuffle(options)
-            
-            for i, opt in enumerate(options, 1):
-                print(f"  [{i}] {opt}")
-                
-            ans = input("What does this translate to? (1-3): ").strip()
-            idx = int(ans) - 1 if ans.isdigit() and 0 < int(ans) <= len(options) else -1
-            is_correct = (idx != -1 and options[idx] == target["correct_eng"])
-
-
-
-        # --- EVALUATION LOGIC SUBMISSION ---
-        res = session.submit_answer(is_correct)
-        if activity not in ["card_intro", "dialogue_passive"]:
-            if res["status"] == "correct":
-                print("\033[1;32m✅ CORRECT!\033[0m")
-            else:
-                print("\033[1;31m❌ WRONG ANSWER!\033[0m Re-shuffling card back into deck...")
-                
-        print(f"Current Lesson Queue Size: {len(session.queue)} Cards | Progress: {res['progress']*100:.1f}%")
-
-
-if __name__ == "__main__":
-
-    active_session = LessonSession()
-
-    # Pass the entire active state machine directly to the player loop
-    run_terminal_lesson(active_session)

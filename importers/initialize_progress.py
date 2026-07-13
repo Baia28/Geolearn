@@ -52,7 +52,8 @@ def initialize_user_progress_system():
             content_id INTEGER,
             user_input TEXT,
             is_correct INTEGER,
-            is_review_item INTEGER
+            is_review_item INTEGER,
+            response_latency_ms INTEGER
         );
     """)
 
