@@ -9,11 +9,36 @@ def initialize_user_progress_system():
     print("=" * 60)
     
     # Force a fresh start if you want to wipe testing data (Optional)
-    # if os.path.exists(PROGRESS_DB_NAME):
-    #     os.remove(PROGRESS_DB_NAME)
+    if os.path.exists(PROGRESS_DB_NAME):
+       os.remove(PROGRESS_DB_NAME)
 
     conn = sqlite3.connect(PROGRESS_DB_NAME)
     cursor = conn.cursor()
+
+    # 0. NEW: ACTIVITY TYPES REFERENCE TABLE
+    print("🛠️ Creating table: activity_types...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS activity_types (
+            activity_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_code TEXT UNIQUE NOT NULL
+        );
+    """)
+
+    # Pre-populate the activity types from your blueprint
+    activity_blueprint = [
+        "mc_geo_to_eng", "mc_eng_to_geo", "mc_geo_pair_geo", 
+        "match_matrix_3x3", "type_georgian", 
+        "audio_mc_to_eng", "audio_mc_to_geo", "audio_dictation",
+        "dialogue_passive", "dialogue_context_mc", "dialogue_roleplay_mc",
+        "type_translit", "speech_rec_to_eng", "speech_rec_to_geo"
+    ]
+
+    for activity in activity_blueprint:
+        cursor.execute(
+            "INSERT OR IGNORE INTO activity_types (activity_code) VALUES (?);", 
+            (activity,)
+        )
+
 
     # 1. LESSON PROGRESS CHECKPOINTS (For Save / Resume / Restart feature)
     print("🛠️ Creating table: lesson_progress...")
@@ -48,12 +73,13 @@ def initialize_user_progress_system():
             phase_num INTEGER,
             unit_num INTEGER,
             lesson_num INTEGER,
-            activity_type TEXT,
+            activity_id INTEGER,
             content_id INTEGER,
             user_input TEXT,
             is_correct INTEGER,
             is_review_item INTEGER,
-            response_latency_ms INTEGER
+            response_latency_ms INTEGER,
+            FOREIGN KEY (activity_id) REFERENCES activity_types(activity_id)
         );
     """)
 
