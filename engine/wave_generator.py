@@ -62,91 +62,99 @@ class WaveGenerator:
         # Matrix grids and dialogues are always placed at the end as ultimate comprehension checks.
         return final_learning_stream + matrix_cards + dialogue_cards
 
+
+
     def _generate_chunked_vocab_stream(self, vocab_list, lesson_id):
         """
-        Splits vocabulary into micro-batches of 2 or 3 words, generates Waves 1-3 
-        for each batch, shuffles them locally, and stitches them together safely.
+        Uses a topological queue system to perfectly interleave activity types 
+        across ALL words in the lesson simultaneously, removing micro-batches.
         """
-        all_vocab_cards = []
+        word_queues = {}
         
-        # Micro-batching (Chunk size of 3 is optimal for working memory)
-        chunk_size = 3
-        for i in range(0, len(vocab_list), chunk_size):
-            chunk = vocab_list[i:i + chunk_size]
-            batch_cards = []
+        # Load all vocabulary into the queues at once
+        for step_order, word_row in vocab_list:
+            c_id, geo, eng, trans = word_row
             
-            for step_order, word_row in chunk:
-                c_id, geo, eng, trans = word_row
-                
-                # Respective fade settings
-                display_trans = trans if not self.progress_db.should_fade_transliteration(c_id) else None
-                word_data = {"id": c_id, "geo": geo, "eng": eng, "trans": display_trans}
-                
-                # Fetch standard distractors
-                distractors = self.content_db.get_distractors(lesson_id, c_id, limit=2)
-                
-                # --- Phrase Check ---
-                # If word sequence is 3+ words, skip audio/dictation, routing only to recognition & writing
-                if len(eng.split()) >= 3:
-                    batch_cards.append({
-                        "content_id": c_id,
-                        "activity": "mc_geo_to_eng",
-                        "target": word_data,
-                        "distractors": [d[0] for d in distractors]
-                    })
-                    batch_cards.append({
-                        "content_id": c_id,
-                        "activity": "type_georgian",
-                        "target": word_data
-                    })
-                    continue
-
-                # --- WAVE 1: Adaptive Recognition ---
-                batch_cards.append({
+            display_trans = trans if not self.progress_db.should_fade_transliteration(c_id) else None
+            word_data = {"id": c_id, "geo": geo, "eng": eng, "trans": display_trans}
+            distractors = self.content_db.get_distractors(lesson_id, c_id, limit=2)
+            
+            cards_for_this_word = []
+            
+            # --- Phrase Check Fix: Count Georgian words, not English! ---
+            if len(geo.split()) >= 3:
+                cards_for_this_word.append({
                     "content_id": c_id,
                     "activity": "mc_geo_to_eng",
                     "target": word_data,
-                    "distractors": [d[0] for d in distractors],
-                    "adaptive_pair_tag": f"recog_sibling_{c_id}"
+                    "distractors": [d[0] for d in distractors]
                 })
-                batch_cards.append({
+                cards_for_this_word.append({
                     "content_id": c_id,
-                    "activity": "mc_eng_to_geo",
-                    "target": word_data,
-                    "distractors": [d[1] for d in distractors],
-                    "adaptive_pair_tag": f"recog_sibling_{c_id}",
-                    "is_conditional_backup": True
-                })
-
-                # --- WAVE 2: Audio Training ---
-                chosen_audio_style = random.choice(["audio_mc_to_eng", "audio_mc_to_geo"])
-                chosen_distractors = (
-                    [d[0] for d in distractors] if chosen_audio_style == "audio_mc_to_eng" 
-                    else [d[1] for d in distractors]
-                )
-                batch_cards.append({
-                    "content_id": c_id,
-                    "activity": chosen_audio_style,
-                    "target": word_data,
-                    "distractors": chosen_distractors
-                })
-
-                # --- WAVE 3: Production ---
-                last_style_used = self.progress_db.get_last_production_activity_code(c_id)
-                next_production_style = "type_georgian" if last_style_used == "audio_dictation" else "audio_dictation"
-                
-                batch_cards.append({
-                    "content_id": c_id,
-                    "activity": next_production_style,
+                    "activity": "type_georgian",
                     "target": word_data
                 })
+                word_queues[c_id] = cards_for_this_word
+                continue
 
-            # Shuffle and space cards inside this micro-batch
-            spaced_batch = self._space_out_activities(batch_cards)
-            all_vocab_cards.append(spaced_batch)
+            # --- WAVE 1: Core Recognition ---
+            cards_for_this_word.append({
+                "content_id": c_id,
+                "activity": "mc_geo_to_eng",
+                "target": word_data,
+                "distractors": [d[0] for d in distractors]
+            })
 
-        # Stitch all batches safely to prevent identical items from colliding at boundaries
-        return self._safe_stitch_waves(all_vocab_cards)
+            # --- WAVE 2: Audio Training ---
+            chosen_audio_style = random.choice(["audio_mc_to_eng", "audio_mc_to_geo"])
+            chosen_distractors = (
+                [d[0] for d in distractors] if chosen_audio_style == "audio_mc_to_eng" 
+                else [d[1] for d in distractors]
+            )
+            cards_for_this_word.append({
+                "content_id": c_id,
+                "activity": chosen_audio_style,
+                "target": word_data,
+                "distractors": chosen_distractors
+            })
+
+            # --- WAVE 3: Production ---
+            last_style_used = self.progress_db.get_last_production_activity_code(c_id)
+            next_production_style = "type_georgian" if last_style_used == "audio_dictation" else "audio_dictation"
+            cards_for_this_word.append({
+                "content_id": c_id,
+                "activity": next_production_style,
+                "target": word_data
+            })
+
+            word_queues[c_id] = cards_for_this_word
+
+        # --- THE GLOBAL INTERLEAVER ENGINE ---
+        interleaved_batch = []
+        last_id = None
+        
+        while word_queues:
+            # Find words that we didn't JUST practice (to force spacing)
+            valid_ids = [cid for cid in word_queues.keys() if cid != last_id]
+            
+            if not valid_ids:
+                # Forced to pick the same word (only one word left in the entire lesson)
+                chosen_id = list(word_queues.keys())[0]
+            else:
+                # Pick a random valid word to advance its progression
+                chosen_id = random.choice(valid_ids)
+            
+            # Pop the next required step for this specific word
+            next_card = word_queues[chosen_id].pop(0)
+            interleaved_batch.append(next_card)
+            last_id = chosen_id
+            
+            # If this word has finished all its waves, remove it from the pool
+            if not word_queues[chosen_id]:
+                del word_queues[chosen_id]
+
+        # No stitching needed anymore, the whole lesson is one perfectly mixed stream!
+        return interleaved_batch
 
     def _generate_convo_cards(self, convo_pairs, lesson_id):
         """
