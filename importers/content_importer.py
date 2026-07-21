@@ -333,23 +333,35 @@ def main():
         if not p_num or not u_num or not l_num or not c_type or not target or step_order is None: 
             continue
 
-        # Ensure Phase structural hierarchy exists
-        cursor.execute("INSERT OR IGNORE INTO phases (sequence_order, title) VALUES (?, ?)", (p_num, p_name))
-        cursor.execute("SELECT phase_id FROM phases WHERE title=?", (p_name,))
-        phase_id = cursor.fetchone()[0]
+        # 1. GET OR CREATE PHASE
+        cursor.execute("SELECT phase_id FROM phases WHERE sequence_order = ?", (p_num,))
+        p_res = cursor.fetchone()
+        if p_res:
+            phase_id = p_res[0]
+        else:
+            cursor.execute("INSERT INTO phases (sequence_order, title) VALUES (?, ?)", (p_num, p_name))
+            phase_id = cursor.lastrowid
 
-        # Ensure Unit hierarchy exists
-        cursor.execute("INSERT OR IGNORE INTO units (phase_id, sequence_order, title) VALUES (?, ?, ?)", (phase_id, u_num, u_name))
-        cursor.execute("SELECT unit_id FROM units WHERE title=? AND phase_id=?", (u_name, phase_id))
-        unit_id = cursor.fetchone()[0]
+        # 2. GET OR CREATE UNIT (Unique to this Phase)
+        cursor.execute("SELECT unit_id FROM units WHERE phase_id = ? AND sequence_order = ?", (phase_id, u_num))
+        u_res = cursor.fetchone()
+        if u_res:
+            unit_id = u_res[0]
+        else:
+            cursor.execute("INSERT INTO units (phase_id, sequence_order, title) VALUES (?, ?, ?)", (phase_id, u_num, u_name))
+            unit_id = cursor.lastrowid
 
-        # Ensure Lesson header exists
+        # 3. GET OR CREATE LESSON (Unique to this Unit)
         l_title = f"Lesson {l_num}"
-        cursor.execute("INSERT OR IGNORE INTO lessons (unit_id, sequence_order, title) VALUES (?, ?, ?)", (unit_id, l_num, l_title))
-        cursor.execute("SELECT lesson_id FROM lessons WHERE unit_id=? AND sequence_order=?", (unit_id, l_num))
-        lesson_id = cursor.fetchone()[0]
+        cursor.execute("SELECT lesson_id FROM lessons WHERE unit_id = ? AND sequence_order = ?", (unit_id, l_num))
+        l_res = cursor.fetchone()
+        if l_res:
+            lesson_id = l_res[0]
+        else:
+            cursor.execute("INSERT INTO lessons (unit_id, sequence_order, title) VALUES (?, ?, ?)", (unit_id, l_num, l_title))
+            lesson_id = cursor.lastrowid
 
-        # Fetch the ID of the component type matching Excel ('monologue' or 'dialogue')
+        # 4. FETCH COMPONENT TYPE ('monologue' or 'dialogue')
         cursor.execute("SELECT component_type_id FROM lesson_component_types WHERE name=?", (c_type.lower(),))
         comp_res = cursor.fetchone()
         if not comp_res:
@@ -357,19 +369,17 @@ def main():
             continue
         comp_type_id = comp_res[0]
 
-        # Cross-reference the correct asset table ID based on type
+        # 5. CROSS-REFERENCE ASSET TABLE ID
         if c_type.lower() == 'dialogue':
-            # Look up internal dialogue identity code
             cursor.execute("SELECT dialogue_id FROM dialogues WHERE internal_code=?", (target,))
             match = cursor.fetchone()
             assoc_id = match[0] if match else None
         else:
-            # Look up word, phrase, or sentence pattern in master content
             cursor.execute("SELECT content_id FROM content WHERE georgian=?", (target,))
             match = cursor.fetchone()
             assoc_id = match[0] if match else None
 
-        # Insert relationship if asset found, warn if missing
+        # 6. LINK ASSET TO LESSON IN LESSON_CONTENTS
         if assoc_id:
             cursor.execute("""
                 INSERT OR IGNORE INTO lesson_contents (lesson_id, component_type_id, associated_id, step_order)

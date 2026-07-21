@@ -408,3 +408,131 @@ class ContentDBManager:
         if all_lessons:
             return all_lessons[0][0], all_lessons[0][1], all_lessons[0][2], all_lessons[0][3]
         return 1, 1, 1, 1
+    
+
+
+    # =========================================================================
+    # CURRICULUM & PROGRESS NAVIGATION QUERIES
+    # =========================================================================
+
+    def get_phases_summary(self, completed_lesson_ids: list):
+        """
+        Fetches all phases along with their total lesson counts, completed lesson counts,
+        and progress ratios.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT p.sequence_order, p.title, l.lesson_id
+            FROM phases p
+            LEFT JOIN units u ON p.phase_id = u.phase_id
+            LEFT JOIN lessons l ON u.unit_id = l.unit_id
+            ORDER BY p.sequence_order ASC
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        phases_map = {}
+        completed_set = set(completed_lesson_ids)
+
+        for phase_num, phase_title, lesson_id in rows:
+            if phase_num not in phases_map:
+                phases_map[phase_num] = {
+                    "phase_num": phase_num,
+                    "title": phase_title or f"Phase {phase_num}",
+                    "total_lessons": 0,
+                    "completed_lessons": 0,
+                    "progress": 0.0
+                }
+            
+            if lesson_id is not None:
+                phases_map[phase_num]["total_lessons"] += 1
+                if lesson_id in completed_set:
+                    phases_map[phase_num]["completed_lessons"] += 1
+
+        summary_list = []
+        for phase_num in sorted(phases_map.keys()):
+            p_data = phases_map[phase_num]
+            total = p_data["total_lessons"]
+            p_data["progress"] = (p_data["completed_lessons"] / total) if total > 0 else 0.0
+            summary_list.append(p_data)
+
+        return summary_list
+
+    def get_units_for_phase(self, phase_num: int, completed_lesson_ids: list):
+        """
+        Fetches all units inside a given phase with progress ratios.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT u.sequence_order, u.title, l.lesson_id
+            FROM units u
+            JOIN phases p ON u.phase_id = p.phase_id
+            LEFT JOIN lessons l ON u.unit_id = l.unit_id
+            WHERE p.sequence_order = ?
+            ORDER BY u.sequence_order ASC
+        """, (phase_num,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        units_map = {}
+        completed_set = set(completed_lesson_ids)
+
+        for unit_num, unit_title, lesson_id in rows:
+            if unit_num not in units_map:
+                units_map[unit_num] = {
+                    "unit_num": unit_num,
+                    "title": unit_title or f"Unit {unit_num}",
+                    "total_lessons": 0,
+                    "completed_lessons": 0,
+                    "progress": 0.0
+                }
+            
+            if lesson_id is not None:
+                units_map[unit_num]["total_lessons"] += 1
+                if lesson_id in completed_set:
+                    units_map[unit_num]["completed_lessons"] += 1
+
+        summary_list = []
+        for unit_num in sorted(units_map.keys()):
+            u_data = units_map[unit_num]
+            total = u_data["total_lessons"]
+            u_data["progress"] = (u_data["completed_lessons"] / total) if total > 0 else 0.0
+            summary_list.append(u_data)
+
+        return summary_list
+
+    def get_lessons_for_unit(self, phase_num: int, unit_num: int, completed_lesson_ids: list):
+        """
+        Fetches all individual lessons inside a unit.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT l.lesson_id, l.sequence_order, l.title
+            FROM lessons l
+            JOIN units u ON l.unit_id = u.unit_id
+            JOIN phases p ON u.phase_id = p.phase_id
+            WHERE p.sequence_order = ? AND u.sequence_order = ?
+            ORDER BY l.sequence_order ASC
+        """, (phase_num, unit_num))
+        rows = cursor.fetchall()
+        conn.close()
+
+        completed_set = set(completed_lesson_ids)
+        lesson_list = []
+
+        for lesson_id, lesson_num, lesson_title in rows:
+            is_completed = lesson_id in completed_set
+            lesson_list.append({
+                "lesson_id": lesson_id,
+                "lesson_num": lesson_num,
+                "title": lesson_title or f"Lesson {lesson_num}",
+                "is_completed": is_completed
+            })
+
+        return lesson_list

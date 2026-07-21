@@ -1,3 +1,7 @@
+# The Active State. It holds the LessonSession Class
+# This is what tracks the active queue, 
+# reaction times, and handles adaptive mistakes.
+
 import time
 from engine.db_managers import ProgressDBManager, ContentDBManager
 from engine.wave_generator import WaveGenerator
