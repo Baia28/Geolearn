@@ -1,3 +1,7 @@
+# engine/db_managers.py: The Gatekeeper. 
+# It handles all SQLite queries, SRS interval math, 
+# and database connections.
+
 import sqlite3
 import os
 import datetime

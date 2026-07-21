@@ -1,3 +1,7 @@
+# (The Maintainer): This handles your long-term memory (the Spaced Repetition System). 
+# It talks directly to db_managers.py to pull a flat list of cards that are due 
+# for review today based on their SRS intervals.
+
 import sqlite3
 import random
 import os
