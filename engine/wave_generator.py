@@ -1,3 +1,7 @@
+# The Interleaver. It takes words from the database
+# and builds the progressive sequence
+# of Wave 1 -> Wave 2 -> Wave 3 exercises.
+
 import random
 
 class WaveGenerator:
@@ -178,84 +182,101 @@ class WaveGenerator:
 
     def _generate_matrix_cards(self, vocab_list):
         """
-        Buffers vocabulary words into sets of 3 to output matching matrix grids.
+        Dynamically divides vocabulary words into evenly distributed matrices (2 to 5 pairs).
         """
-        matrix_cards = []
-        vocab_buffer = []
-        
-        for step_order, word_row in vocab_list:
-            c_id, geo, eng, trans = word_row
-            vocab_buffer.append({"id": c_id, "geo": geo, "eng": eng})
+        if not vocab_list:
+            return []
             
-            if len(vocab_buffer) == 3:
+        total_words = len(vocab_list)
+        
+        # Calculate optimal number of matrices (max 5 pairs per matrix)
+        # e.g., 6 words -> 2 matrices. 11 words -> 3 matrices.
+        import math
+        num_matrices = max(1, math.ceil(total_words / 5.0))
+        
+        # Figure out sizes of each matrix for an even split
+        base_size = total_words // num_matrices
+        remainder = total_words % num_matrices
+        
+        sizes = []
+        for i in range(num_matrices):
+            # Distribute the remainder across the first few matrices
+            size = base_size + (1 if i < remainder else 0)
+            sizes.append(size)
+            
+        matrix_cards = []
+        current_index = 0
+        
+        for size in sizes:
+            vocab_buffer = []
+            for _ in range(size):
+                if current_index < total_words:
+                    step_order, word_row = vocab_list[current_index]
+                    c_id, geo, eng, trans = word_row
+                    vocab_buffer.append({"id": c_id, "geo": geo, "eng": eng})
+                    current_index += 1
+                    
+            if vocab_buffer:
                 matrix_cards.append({
                     "content_id": "matrix_block",
-                    "activity": "match_matrix_3x3",
-                    "targets": list(vocab_buffer)
+                    "activity": "match_matrix_3x3", # Name kept for compatibility, but handles dynamic sizes
+                    "targets": vocab_buffer
                 })
-                vocab_buffer.clear()
                 
-        # Flush any remaining words (even if less than 3) into a final matrix
-        if vocab_buffer:
-            matrix_cards.append({
-                "content_id": "matrix_block",
-                "activity": "match_matrix_3x3",
-                "targets": list(vocab_buffer)
-            })
-            
         return matrix_cards
+
 
     def _generate_dialogue_cards(self, dialogues, lesson_id):
         """
-        Builds comprehensive reading references, conversational completion games, 
-        and implicit vocabulary challenges around dialogues.
+        Builds reading references and a step-by-step interactive live dialogue.
         """
         cards = []
         for step_order, assoc_id, dialogue_data in dialogues:
             dialogue_id = dialogue_data[0]
             diag_code = dialogue_data[1]
             
+            lines = self.content_db.get_dialogue_lines(dialogue_id)
+            
             # Step A: Passive Reading reference slide
             cards.append({
                 "content_id": f"diag_{dialogue_id}",
                 "activity": "dialogue_passive",
-                "target": {"id": dialogue_id, "code": diag_code}
+                "target": {"id": dialogue_id, "code": diag_code, "lines": lines}
             })
             
-            lines = self.content_db.get_dialogue_lines(dialogue_id)
+            # Step B: Live Interactive Chat Simulator
             if len(lines) >= 2:
-                # Step B: Roleplay Conversational completion (Hide final dialogue response)
-                last_line = lines[-1]
-                speaker, geo, trans, eng = last_line
-                roleplay_distractors = self.content_db.get_convo_distractors(lesson_id, 0, limit=2)
+                interactive_steps = []
+                
+                for idx, line in enumerate(lines):
+                    speaker, geo, trans, eng = line
+                    
+                    # Even indices (0, 2, 4) = Prompt (Speaker A)
+                    # Odd indices (1, 3, 5) = User Choice (Speaker B)
+                    if idx % 2 == 0:
+                        interactive_steps.append({
+                            "type": "prompt", 
+                            "speaker": speaker, 
+                            "text": geo
+                        })
+                    else:
+                        # Fetch 2 distractors dynamically
+                        distractors = self.content_db.get_convo_distractors(lesson_id, 0, limit=2)
+                        interactive_steps.append({
+                            "type": "choice",
+                            "speaker": speaker,
+                            "correct": geo,
+                            "distractors": [d[0] for d in distractors]
+                        })
                 
                 cards.append({
-                    "content_id": f"diag_{dialogue_id}_rp",
-                    "activity": "dialogue_roleplay_mc",
-                    "target": {
-                        "speaker": speaker,
-                        "correct_geo": geo,
-                        "context_eng": eng
-                    },
-                    "distractors": [d[0] for d in roleplay_distractors]
+                    "content_id": f"diag_{dialogue_id}_live",
+                    "activity": "dialogue_interactive",
+                    "target": {"steps": interactive_steps}
                 })
                 
-                # Step C: Dialogue Context translation question
-                random_line = random.choice(lines)
-                _, context_geo, _, context_eng = random_line
-                
-                # Grab standard global distractors for meaning context
-                fallback_distractors = self.content_db.get_distractors(lesson_id, 0, limit=2)
-                cards.append({
-                    "content_id": f"diag_{dialogue_id}_comp",
-                    "activity": "dialogue_context_mc",
-                    "target": {
-                        "quote_geo": context_geo,
-                        "correct_eng": context_eng
-                    },
-                    "distractors": [d[0] for d in fallback_distractors]
-                })
         return cards
+    
 
     def _interleave_srs_reviews(self, core_learning_stream):
         """

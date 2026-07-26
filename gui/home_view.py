@@ -26,7 +26,7 @@ class HomeView(ft.Column):
             controls=[
                 ft.Row(
                     controls=[
-                        ft.Icon(ft.icons.LANGUAGE, size=40, color=ft.Colors.BLUE_600),
+                        ft.Icon(ft.Icons.LANGUAGE, size=40, color=ft.Colors.BLUE_600),
                         ft.Text("GeoLearn", size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
                     ],
                     alignment=ft.MainAxisAlignment.CENTER,
@@ -64,7 +64,7 @@ class HomeView(ft.Column):
                                 spacing=2,
                                 expand=True
                             ),
-                            ft.Icon(ft.icons.CHEVRON_RIGHT, color=ft.Colors.GREY_400)
+                            ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ft.Colors.GREY_400)
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN
                     )
@@ -129,7 +129,7 @@ class HomeView(ft.Column):
                         controls=[
                             ft.Row(
                                 controls=[
-                                    ft.Icon(ft.icons.FLASH_ON, color=ft.Colors.AMBER_700, size=20),
+                                    ft.Icon(ft.Icons.FLASH_ON, color=ft.Colors.AMBER_700, size=20),
                                     ft.Text("Quick SRS Review", size=14, weight=ft.FontWeight.BOLD),
                                 ],
                                 spacing=8
@@ -151,7 +151,7 @@ class HomeView(ft.Column):
                         controls=[
                             ft.Row(
                                 controls=[
-                                    ft.Icon(ft.icons.MENU_BOOK, color=ft.Colors.TEAL_600, size=20),
+                                    ft.Icon(ft.Icons.MENU_BOOK, color=ft.Colors.TEAL_600, size=20),
                                     ft.Text("Passive Reading", size=14, weight=ft.FontWeight.BOLD),
                                 ],
                                 spacing=8
@@ -173,7 +173,7 @@ class HomeView(ft.Column):
                         controls=[
                             ft.Row(
                                 controls=[
-                                    ft.Icon(ft.icons.LIGHTBULB_OUTLINE, color=ft.Colors.PURPLE_400, size=20),
+                                    ft.Icon(ft.Icons.LIGHTBULB_OUTLINE, color=ft.Colors.PURPLE_400, size=20),
                                     ft.Text("Culture & Fun Facts", size=14, weight=ft.FontWeight.BOLD),
                                 ],
                                 spacing=8

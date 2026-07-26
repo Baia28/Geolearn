@@ -28,8 +28,8 @@ class UnitsView(ft.Column):
         # 1. Navigation Bar
         nav_bar = ft.Row(
             controls=[
-                ft.TextButton("Back to Phases", icon=ft.icons.ARROW_BACK, on_click=lambda e: self.on_back()),
-                ft.TextButton("Home", icon=ft.icons.HOME, on_click=lambda e: self.on_home()),
+                ft.TextButton("Back to Phases", icon=ft.Icons.ARROW_BACK, on_click=lambda e: self.on_back()),
+                ft.TextButton("Home", icon=ft.Icons.HOME, on_click=lambda e: self.on_home()),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN
         )

@@ -111,7 +111,7 @@ def main(page: ft.Page):
         # Add a top bar to allow quitting back to Home at any time during a session
         exit_bar = ft.Row(
             controls=[
-                ft.TextButton("Exit Session", icon=ft.icons.CLOSE, on_click=lambda e: show_home())
+                ft.TextButton("Exit Session", icon=ft.Icons.CLOSE, on_click=lambda e: show_home())
             ],
             alignment=ft.MainAxisAlignment.START
         )

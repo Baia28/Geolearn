@@ -5,7 +5,7 @@ from gui.keyboard import GeorgianKeyboard
 class MatchMatrix3x3(ft.Container):
     def __init__(self, targets: list, on_submit: callable):
         super().__init__()
-        self.targets = targets # List of dicts: {"id": 1, "geo": "...", "eng": "..."}
+        self.targets = targets  # List of dicts: {"id": 1, "geo": "...", "eng": "..."}
         self.on_submit = on_submit
         
         self.selected_btn = None
@@ -14,72 +14,86 @@ class MatchMatrix3x3(ft.Container):
         self._build_grid()
 
     def _build_grid(self):
-        # Flatten geo and eng into a pool of buttons
-        buttons_data = []
-        for t in self.targets:
-            buttons_data.append({"type": "geo", "text": t["geo"], "id": t["id"]})
-            buttons_data.append({"type": "eng", "text": t["eng"], "id": t["id"]})
-            
-        random.shuffle(buttons_data)
+        # Separate Georgian and English into two clean columns
+        geo_buttons = []
+        eng_buttons = []
         
-        self.grid_controls = []
-        for bd in buttons_data:
-            btn = ft.ElevatedButton(
-                text=bd["text"],
-                data=bd, # Store the dict to reference ID later
-                width=130,
-                height=70,
-                on_click=self._handle_tap
-            )
-            self.grid_controls.append(btn)
+        for t in self.targets:
+            geo_buttons.append({"type": "geo", "text": t["geo"], "id": t["id"]})
+            eng_buttons.append({"type": "eng", "text": t["eng"], "id": t["id"]})
+            
+        random.shuffle(geo_buttons)
+        random.shuffle(eng_buttons)
+        
+        geo_col = ft.Column([self._create_btn(b) for b in geo_buttons], spacing=10)
+        eng_col = ft.Column([self._create_btn(b) for b in eng_buttons], spacing=10)
             
         self.content = ft.Row(
-            controls=self.grid_controls,
-            wrap=True,
+            controls=[geo_col, eng_col],
             alignment=ft.MainAxisAlignment.CENTER,
-            spacing=10
+            spacing=40
+        )
+
+    def _create_btn(self, data):
+        return ft.ElevatedButton(
+            text=data["text"],
+            data=data,
+            width=150,
+            height=60,
+            on_click=self._handle_tap
         )
 
     def _handle_tap(self, e):
         clicked_btn = e.control
+
+        # 1. Ignore clicks on already matched/disabled buttons
+        if clicked_btn.disabled:
+            return
+
+        # 2. First tap selection
         if self.selected_btn is None:
-            # First tap
             self.selected_btn = clicked_btn
-            clicked_btn.bgcolor = ft.Colors.BLUE_200
+            self.selected_btn.bgcolor = ft.Colors.BLUE_200
             self.update()
-        else:
-            # Second tap
-            if self.selected_btn == clicked_btn:
-                # Deselect
-                self.selected_btn.bgcolor = None
-                self.selected_btn = None
-                self.update()
-                return
-                
-            # Check match
-            id1 = self.selected_btn.data["id"]
-            id2 = clicked_btn.data["id"]
-            type1 = self.selected_btn.data["type"]
-            type2 = clicked_btn.data["type"]
-            
-            if id1 == id2 and type1 != type2:
-                # Correct match!
-                self.selected_btn.visible = False
-                clicked_btn.visible = False
-                self.matches_found += 1
-                e.page.update()
+            return
 
-                # Check if entire matrix batch is cleared
-                if self.matches_found == len(self.targets):
-                    self.on_submit(True)
-            else:
-                # Wrong Match
-                self.selected_btn.bgcolor = None
-                e.page.update()
-            
+        # 3. Deselect if tapping the same button twice
+        if self.selected_btn == clicked_btn:
+            self.selected_btn.bgcolor = None
             self.selected_btn = None
+            self.update()
+            return
 
+        # 4. Evaluate pair match
+        id1 = self.selected_btn.data["id"]
+        id2 = clicked_btn.data["id"]
+        type1 = self.selected_btn.data["type"]
+        type2 = clicked_btn.data["type"]
 
+        if id1 == id2 and type1 != type2:
+            # Match success: fade both buttons out seamlessly
+            fade_color = ft.Colors.GREEN_100
+            
+            self.selected_btn.bgcolor = fade_color
+            self.selected_btn.opacity = 0.35
+            self.selected_btn.disabled = True
+
+            clicked_btn.bgcolor = fade_color
+            clicked_btn.opacity = 0.35
+            clicked_btn.disabled = True
+
+            self.matches_found += 1
+            self.selected_btn = None  # Reset active tracker immediately
+            self.update()
+
+            # Check if all pairs in this matrix are solved
+            if self.matches_found == len(self.targets):
+                self.on_submit(True)
+        else:
+            # Wrong match: reset selection color and clear tracker
+            self.selected_btn.bgcolor = None
+            self.selected_btn = None
+            self.update()
 
 class TypeGeorgian(ft.Column):
     def __init__(self, target_data: dict, on_submit: callable):
@@ -127,8 +141,15 @@ class TypeGeorgian(ft.Column):
         current_text = self.input_field.value if self.input_field.value else ""
         if len(current_text) > 0:
             self.input_field.value = current_text[:-1]
-        
+
     def _validate(self, e):
         user_text = self.input_field.value.strip() if self.input_field.value else ""
-        is_correct = (user_text == self.target["geo"])
+        target_text = self.target["geo"].strip()
+        
+        # Remove common punctuation for lenient validation
+        punctuation = "!?.,;:'\""
+        clean_user = user_text.translate(str.maketrans('', '', punctuation)).lower()
+        clean_target = target_text.translate(str.maketrans('', '', punctuation)).lower()
+        
+        is_correct = (clean_user == clean_target)
         self.on_submit(is_correct, user_input=user_text)
