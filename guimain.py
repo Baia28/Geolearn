@@ -25,7 +25,7 @@ def main(page: ft.Page):
     page.vertical_alignment = ft.MainAxisAlignment.START
 
     page.window.width = 900
-    page.window.height = 700
+    page.window.height = 900
 
     # 2. Initialize Database Connection Managers
     content_db = ContentDBManager(CONTENT_DB_PATH)

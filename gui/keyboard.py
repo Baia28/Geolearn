@@ -6,6 +6,10 @@ class GeorgianKeyboard(ft.Container):
         self.on_key_tap = on_key_tap
         self.on_backspace = on_backspace
         self.is_shift = False
+
+        self.max_width = 480
+        self.padding = 10
+        self.alignment = ft.alignment.center
         
         # Standard Georgian QWERTY Mapping
         # Format: (Latin_lower, Geo_lower, Latin_upper, Geo_upper)
@@ -28,7 +32,6 @@ class GeorgianKeyboard(ft.Container):
              ('m', 'მ', None, None)]
         ]
         
-        self.padding = 10
         self._build_keyboard()
 
     def _build_keyboard(self):
@@ -48,7 +51,7 @@ class GeorgianKeyboard(ft.Container):
 
                 # Create the custom key
                 key_btn = ft.Container(
-                    width=42,
+                    width=40,
                     height=50,
                     bgcolor=ft.Colors.BLUE_GREY_50,
                     border_radius=6,
@@ -79,20 +82,54 @@ class GeorgianKeyboard(ft.Container):
             
             rows.append(ft.Row(controls=row_controls, alignment=ft.MainAxisAlignment.CENTER, spacing=4))
 
-        # Add Action Keys (Shift, Space, Backspace)
-        shift_color = ft.Colors.BLUE_100 if self.is_shift else ft.Colors.BLUE_GREY_100
+        # Action Buttons (Shift, Space, Backspace) - Uniform styling
+        shift_bg = ft.Colors.BLUE_200 if self.is_shift else ft.Colors.BLUE_GREY_100
+        
+        shift_btn = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.ARROW_UPWARD_ROUNDED, size=14, color=ft.Colors.BLACK87),
+                ft.Text("Shift", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK87)
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=2),
+            width=80,
+            height=44,
+            bgcolor=shift_bg,
+            border_radius=6,
+            alignment=ft.alignment.center,
+            ink=True,
+            on_click=self._toggle_shift
+        )
+
+        space_btn = ft.Container(
+            content=ft.Text("SPACE", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+            width=200,  # <-- Fixed width stops infinite horizontal stretching!
+            height=44,
+            bgcolor=ft.Colors.BLUE_GREY_100,
+            border_radius=6,
+            alignment=ft.alignment.center,
+            ink=True,
+            on_click=lambda e: self._handle_tap(" ", e)
+        )
+
+        backspace_btn = ft.Container(
+            content=ft.Icon(ft.Icons.BACKSPACE_OUTLINED, size=18, color=ft.Colors.RED_700),
+            width=65,
+            height=44,
+            bgcolor=ft.Colors.RED_50,
+            border_radius=6,
+            alignment=ft.alignment.center,
+            ink=True,
+            on_click=self._handle_backspace
+        )
+
         action_row = ft.Row(
-            controls=[
-                ft.ElevatedButton("⇧ Shift", bgcolor=shift_color, color=ft.Colors.BLACK87, on_click=self._toggle_shift, width=85, height=42),
-                ft.ElevatedButton("Space", bgcolor=ft.Colors.BLUE_GREY_100, color=ft.Colors.BLACK87, on_click=lambda e: self._handle_tap(" ", e), expand=True, height=42),
-                ft.ElevatedButton("⌫", bgcolor=ft.Colors.BLUE_GREY_100, color=ft.Colors.BLACK87, on_click=lambda e: self.on_backspace(e), width=65, height=42),
-            ],
+            controls=[shift_btn, space_btn, backspace_btn],
             alignment=ft.MainAxisAlignment.CENTER,
-            spacing=4
+            spacing=6
         )
         rows.append(action_row)
 
         self.content = ft.Column(controls=rows, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+
 
     def _toggle_shift(self, e):
         self.is_shift = not self.is_shift
@@ -104,4 +141,12 @@ class GeorgianKeyboard(ft.Container):
         if self.is_shift:
             self.is_shift = False
             self._build_keyboard()
+        e.page.update()
+
+    def _handle_backspace(self, e):
+        """Safely invokes backspace regardless of signature."""
+        try:
+            self.on_backspace()
+        except TypeError:
+            self.on_backspace(e)
         e.page.update()

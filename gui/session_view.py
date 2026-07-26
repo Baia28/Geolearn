@@ -26,13 +26,18 @@ class SessionView(ft.Column):
         # This container is our "stage"
         self.card_stage = ft.Container(expand=True, alignment=ft.alignment.center)
         
-        # --- NEW CODE: Create a permanent, hidden Continue button ---
-        self.continue_btn = ft.ElevatedButton(
-            "Continue ➔",
-            visible=False, # Hidden by default
-            width=200,
-            height=50,
-            on_click=lambda e: self._clear_and_load_next()
+        # --- UPDATED CODE: Create a permanent, hidden Continue button ---
+        self.continue_btn = ft.Container(
+            content=ft.ElevatedButton(
+                text="Continue ➔",
+                bgcolor=ft.Colors.BLUE_600,
+                color=ft.Colors.WHITE,
+                height=50,
+                width=200,
+                on_click=lambda _: self._clear_and_load_next()
+            ),
+            visible=False,
+            padding=ft.padding.only(bottom=25, top=10) # <-- Adds space above the bottom screen edge
         )
         
         self.controls = [
@@ -62,6 +67,36 @@ class SessionView(ft.Column):
 
         activity = card_data.get("activity")
 
+        try:
+            # 1. Receptive Multiple Choice Cards
+            if "mc" in activity:
+                self.card_stage.content = MultipleChoiceCard(
+                    mode=activity,
+                    target_data=card_data.get("target"),
+                    distractors=card_data.get("distractors"),
+                    on_submit=self._handle_submission
+                )
+            # 2. Production Typing / Dictation
+            elif activity in ["type_georgian", "audio_dictation"]:
+                self.card_stage.content = TypeGeorgian(
+                    mode=activity,
+                    target_data=card_data.get("target"),
+                    on_submit=self._handle_submission
+                )
+            # ... (other routes here)
+
+        except Exception as err:
+            # Catch any rendering error and print it to screen!
+            print(f"❌ Error loading card ({activity}): {err}")
+            import traceback
+            traceback.print_exc()
+            self.card_stage.content = ft.Text(
+                f"Error loading exercise '{activity}':\n{err}", 
+                color=ft.Colors.RED_600, 
+                size=16
+            )
+            
+
         # 1. Route: Multiple Choice
         if activity in ["mc_geo_to_eng", "mc_eng_to_geo", "mc_geo_pair_geo", "audio_mc_to_eng", "audio_mc_to_geo"]:
             self.card_stage.content = MultipleChoiceCard(
@@ -81,6 +116,7 @@ class SessionView(ft.Column):
         # 3. Route: Type Georgian & Audio Dictation
         elif activity in ["type_georgian", "audio_dictation"]:
             self.card_stage.content = TypeGeorgian(
+                mode=activity,
                 target_data=card_data.get("target"),
                 on_submit=self._handle_submission
             )
@@ -122,7 +158,7 @@ class SessionView(ft.Column):
         self.continue_btn.visible = True
         
         # Freeze the card stage so they can't click other options while reading feedback
-        self.card_stage.disabled = True 
+        #self.card_stage.disabled = True 
         
         self.update()
 
