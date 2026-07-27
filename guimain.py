@@ -115,7 +115,7 @@ def main(page: ft.Page):
             ],
             alignment=ft.MainAxisAlignment.START
         )
-        
+
         main_stage.content = ft.Column(
             controls=[
                 exit_bar,

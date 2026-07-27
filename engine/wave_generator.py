@@ -34,10 +34,18 @@ class WaveGenerator:
                 word_data = self.content_db.get_word_details(assoc_id)
                 if word_data:
                     vocab_list.append((step_order, word_data))
+                    
+                # AUTOMATIC PAIR DETECTOR:
+                # If this monologue item is ALSO a prompt in convo_pairs, grab its pair data too!
+                pair_data = self.content_db.get_convo_pair_details(assoc_id)
+                if pair_data:
+                    convo_pairs.append((step_order, assoc_id, pair_data))
+
             elif comp_type == 'convo_pair':
                 pair_data = self.content_db.get_convo_pair_details(assoc_id)
                 if pair_data:
                     convo_pairs.append((step_order, assoc_id, pair_data))
+
             elif comp_type == 'dialogue':
                 dialogue_data = self.content_db.get_dialogue_details(assoc_id)
                 if dialogue_data:
@@ -48,7 +56,8 @@ class WaveGenerator:
         
         # 3. Build Conversational Cards
         convo_cards = self._generate_convo_cards(convo_pairs, lesson_id)
-        
+        print(f"🕵️ DEBUG: Successfully generated {len(convo_cards)} convo cards!")
+
         # 4. Build Match Matrices
         matrix_cards = self._generate_matrix_cards(vocab_list)
         
@@ -67,25 +76,32 @@ class WaveGenerator:
         return final_learning_stream + matrix_cards + dialogue_cards
 
 
-
     def _generate_chunked_vocab_stream(self, vocab_list, lesson_id):
-        """
-        Uses a topological queue system to perfectly interleave activity types 
-        across ALL words in the lesson simultaneously, removing micro-batches.
-        """
         word_queues = {}
         
-        # Load all vocabulary into the queues at once
         for step_order, word_row in vocab_list:
-            c_id, geo, eng, trans = word_row
-            
+            c_id = word_row[0]
+            geo = word_row[1]
+            eng = word_row[2]
+            trans = word_row[3] if len(word_row) > 3 else ""
+            image_src = word_row[4] if len(word_row) > 4 else None
+            audio_src = word_row[5] if len(word_row) > 5 else None
+
             display_trans = trans if not self.progress_db.should_fade_transliteration(c_id) else None
-            word_data = {"id": c_id, "geo": geo, "eng": eng, "trans": display_trans}
-            distractors = self.content_db.get_distractors(lesson_id, c_id, limit=2)
+
+            word_data = {
+                "id": c_id, 
+                "geo": geo, 
+                "eng": eng, 
+                "trans": display_trans,
+                "image": image_src,
+                "audio": audio_src
+            }
             
+            distractors = self.content_db.get_distractors(lesson_id, c_id, limit=2)
             cards_for_this_word = []
             
-            # --- Phrase Check Fix: Count Georgian words, not English! ---
+            # Long phrases
             if len(geo.split()) >= 3:
                 cards_for_this_word.append({
                     "content_id": c_id,
@@ -101,17 +117,24 @@ class WaveGenerator:
                 word_queues[c_id] = cards_for_this_word
                 continue
 
-            # --- WAVE 1: Core Recognition ---
+            # --- WAVE 1: Core Recognition (MIX Geo->Eng AND Eng->Geo!) ---
+            chosen_rec_style = random.choice(["mc_geo_to_eng", "mc_eng_to_geo"])
+            
+            if chosen_rec_style == "mc_geo_to_eng":
+                rec_distractors = [d[0] for d in distractors] # English options
+            else:
+                rec_distractors = [d[1] for d in distractors] # Georgian options
+
             cards_for_this_word.append({
                 "content_id": c_id,
-                "activity": "mc_geo_to_eng",
+                "activity": chosen_rec_style,
                 "target": word_data,
-                "distractors": [d[0] for d in distractors]
+                "distractors": rec_distractors
             })
 
             # --- WAVE 2: Audio Training ---
             chosen_audio_style = random.choice(["audio_mc_to_eng", "audio_mc_to_geo"])
-            chosen_distractors = (
+            chosen_audio_distractors = (
                 [d[0] for d in distractors] if chosen_audio_style == "audio_mc_to_eng" 
                 else [d[1] for d in distractors]
             )
@@ -119,7 +142,7 @@ class WaveGenerator:
                 "content_id": c_id,
                 "activity": chosen_audio_style,
                 "target": word_data,
-                "distractors": chosen_distractors
+                "distractors": chosen_audio_distractors
             })
 
             # --- WAVE 3: Production ---
@@ -133,52 +156,65 @@ class WaveGenerator:
 
             word_queues[c_id] = cards_for_this_word
 
-        # --- THE GLOBAL INTERLEAVER ENGINE ---
+        # Interleave batch...
         interleaved_batch = []
         last_id = None
         
         while word_queues:
-            # Find words that we didn't JUST practice (to force spacing)
             valid_ids = [cid for cid in word_queues.keys() if cid != last_id]
+            chosen_id = random.choice(valid_ids) if valid_ids else list(word_queues.keys())[0]
             
-            if not valid_ids:
-                # Forced to pick the same word (only one word left in the entire lesson)
-                chosen_id = list(word_queues.keys())[0]
-            else:
-                # Pick a random valid word to advance its progression
-                chosen_id = random.choice(valid_ids)
-            
-            # Pop the next required step for this specific word
             next_card = word_queues[chosen_id].pop(0)
             interleaved_batch.append(next_card)
             last_id = chosen_id
             
-            # If this word has finished all its waves, remove it from the pool
             if not word_queues[chosen_id]:
                 del word_queues[chosen_id]
 
-        # No stitching needed anymore, the whole lesson is one perfectly mixed stream!
         return interleaved_batch
 
     def _generate_convo_cards(self, convo_pairs, lesson_id):
         """
         Builds conversational cards testing stimulus-response pairing context.
+        Supports single or multiple valid responses dynamically.
         """
         cards = []
-        for step_order, assoc_id, (p_id, r_id, p_geo, p_eng, r_geo, r_eng) in convo_pairs:
-            convo_distractors = self.content_db.get_convo_distractors(lesson_id, r_id, limit=2)
+        for step_order, assoc_id, pair_data in convo_pairs:
+            if not pair_data or not isinstance(pair_data, dict):
+                continue
+
+            prompt_info = pair_data.get('prompt', {})
+            correct_info = pair_data.get('correct_response', {})
+            distractors_list = pair_data.get('distractors', [])
+
             cards.append({
                 "content_id": f"pair_{assoc_id}",
                 "activity": "mc_geo_pair_geo",
                 "target": {
-                    "prompt_geo": p_geo,
-                    "prompt_eng": p_eng,
-                    "correct_geo": r_geo,
-                    "correct_eng": r_eng
+                    "prompt_geo": prompt_info.get('georgian', ''),
+                    "prompt_eng": prompt_info.get('english', ''),
+                    "correct_geo": correct_info.get('georgian', ''),
+                    "correct_eng": correct_info.get('english', '')
                 },
-                "distractors": [d[0] for d in convo_distractors]
+                "distractors": [d['georgian'] for d in distractors_list],
+                "all_valid_responses": pair_data.get('all_valid_responses', [])
             })
+
         return self._space_out_activities(cards)
+
+    def generate_geo_pair_card(db_manager, lesson_id):
+        """Assembles a UI-ready exercise dictionary for mc_geo_pair_geo."""
+        target_data, distractors = db_manager.get_convo_pair_for_lesson(lesson_id, distractor_limit=3)
+        
+        if not target_data:
+            return None
+
+        return {
+            "type": "receptive",
+            "mode": "mc_geo_pair_geo",
+            "target_data": target_data,
+            "distractors": distractors
+        }
 
     def _generate_matrix_cards(self, vocab_list):
         """
@@ -189,18 +225,14 @@ class WaveGenerator:
             
         total_words = len(vocab_list)
         
-        # Calculate optimal number of matrices (max 5 pairs per matrix)
-        # e.g., 6 words -> 2 matrices. 11 words -> 3 matrices.
         import math
         num_matrices = max(1, math.ceil(total_words / 5.0))
         
-        # Figure out sizes of each matrix for an even split
         base_size = total_words // num_matrices
         remainder = total_words % num_matrices
         
         sizes = []
         for i in range(num_matrices):
-            # Distribute the remainder across the first few matrices
             size = base_size + (1 if i < remainder else 0)
             sizes.append(size)
             
@@ -212,19 +244,21 @@ class WaveGenerator:
             for _ in range(size):
                 if current_index < total_words:
                     step_order, word_row = vocab_list[current_index]
-                    c_id, geo, eng, trans = word_row
+                    # SAFE UNPACKING: Handles optional image/audio elements without crashing
+                    c_id = word_row[0]
+                    geo = word_row[1]
+                    eng = word_row[2]
                     vocab_buffer.append({"id": c_id, "geo": geo, "eng": eng})
                     current_index += 1
                     
             if vocab_buffer:
                 matrix_cards.append({
                     "content_id": "matrix_block",
-                    "activity": "match_matrix_3x3", # Name kept for compatibility, but handles dynamic sizes
+                    "activity": "match_matrix_3x3",
                     "targets": vocab_buffer
                 })
                 
         return matrix_cards
-
 
     def _generate_dialogue_cards(self, dialogues, lesson_id):
         """
@@ -251,8 +285,6 @@ class WaveGenerator:
                 for idx, line in enumerate(lines):
                     speaker, geo, trans, eng = line
                     
-                    # Even indices (0, 2, 4) = Prompt (Speaker A)
-                    # Odd indices (1, 3, 5) = User Choice (Speaker B)
                     if idx % 2 == 0:
                         interactive_steps.append({
                             "type": "prompt", 
@@ -260,7 +292,6 @@ class WaveGenerator:
                             "text": geo
                         })
                     else:
-                        # Fetch 2 distractors dynamically
                         distractors = self.content_db.get_convo_distractors(lesson_id, 0, limit=2)
                         interactive_steps.append({
                             "type": "choice",
@@ -276,7 +307,6 @@ class WaveGenerator:
                 })
                 
         return cards
-    
 
     def _interleave_srs_reviews(self, core_learning_stream):
         """
@@ -293,16 +323,15 @@ class WaveGenerator:
         for card in core_learning_stream:
             final_stream.append(card)
             
-            # Count active learning card exposures
             if card.get("activity") not in ["dialogue_passive"]:
                 active_step_counter += 1
 
-            # Inject a review card every 3 successful iterations
             if active_step_counter >= 3 and urgent_ids:
                 rev_id = urgent_ids.pop(0)
                 word_details = self.content_db.get_word_details(rev_id)
                 if word_details:
-                    _, geo, eng, trans = word_details
+                    # SAFE UNPACKING: Grab first 4 items regardless of tuple length
+                    _, geo, eng, trans = word_details[:4]
                     final_stream.append({
                         "content_id": rev_id,
                         "activity": "type_georgian",
@@ -311,12 +340,12 @@ class WaveGenerator:
                     })
                 active_step_counter = 0
 
-        # Backfill any remaining reviews in case of ultra-short lessons
         while urgent_ids:
             rev_id = urgent_ids.pop(0)
             word_details = self.content_db.get_word_details(rev_id)
             if word_details:
-                _, geo, eng, trans = word_details
+                # SAFE UNPACKING: Grab first 4 items regardless of tuple length
+                _, geo, eng, trans = word_details[:4]
                 final_stream.append({
                     "content_id": rev_id,
                     "activity": "type_georgian",
@@ -381,12 +410,11 @@ class WaveGenerator:
             while wave:
                 card = wave.pop(0)
                 if stitched_stream and stitched_stream[-1].get("content_id") == card.get("content_id"):
-                    # Collision detected! Swap with the first non-colliding card in this incoming batch.
                     found = False
                     for i, alternate in enumerate(wave):
                         if alternate.get("content_id") != stitched_stream[-1].get("content_id"):
                             stitched_stream.append(wave.pop(i))
-                            wave.insert(0, card)  # Put colliding card back in front of queue
+                            wave.insert(0, card)
                             found = True
                             break
                     if not found:

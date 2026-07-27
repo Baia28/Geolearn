@@ -66,6 +66,8 @@ class MultipleChoiceCard(ft.Container):
         # 2. GEORGIAN PROMPTS: Text + Small Audio Icon + Transliteration
         # -------------------------------------------------------------
         elif self.mode in ["mc_geo_to_eng", "mc_geo_pair_geo", "dialogue_context_mc"]:
+            instruction_text = None
+
             if self.mode == "mc_geo_to_eng":
                 geo_text = self.target.get("geo", "")
                 correct_ans = self.target.get("eng", "")
@@ -74,6 +76,7 @@ class MultipleChoiceCard(ft.Container):
                 geo_text = self.target.get("prompt_geo") or self.target.get("prompt", "")
                 correct_ans = self.target.get("correct_geo") or self.target.get("correct", "")
                 trans_text = self.target.get("prompt_trans") or self.target.get("trans", "")
+                instruction_text = "Select the best response:"  # 💡 Clear task prompt for user!
             elif self.mode == "dialogue_context_mc":
                 geo_text = self.target.get("quote_geo", "")
                 correct_ans = self.target.get("correct_eng", "")
@@ -98,8 +101,25 @@ class MultipleChoiceCard(ft.Container):
             #    subtitle_ui = ft.Text(trans_text, size=16, color=ft.Colors.GREY_500, italic=True)
             #else:
             #    subtitle_ui = ft.Container()
-            subtitle_ui = ft.Text(trans_text, size=16, color=ft.Colors.GREY_500, italic=True)
+            
+            
+            #subtitle_ui = ft.Text(trans_text, size=16, color=ft.Colors.GREY_500, italic=True)
 
+            subtitle_controls = []
+            if instruction_text:
+                subtitle_controls.append(
+                    ft.Text(instruction_text, size=13, color=ft.Colors.GREY_600, italic=True)
+                )
+            if trans_text:
+                subtitle_controls.append(
+                    ft.Text(f"({trans_text})", size=15, color=ft.Colors.GREY_500, italic=True)
+                )
+
+            subtitle_ui = ft.Column(
+                subtitle_controls,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=2
+            ) if subtitle_controls else ft.Container()
 
         # -------------------------------------------------------------
         # 3. ENGLISH / OTHER PROMPTS: Clean Text Prompt
@@ -192,8 +212,17 @@ class MultipleChoiceCard(ft.Container):
         )
 
     def trigger_audio(self, text: str = None):
+        # Checks if target dict contains an explicit audio file path/URL
+        audio_file = self.target.get("audio", None)
         audio_target = text or self.target.get("geo") or self.target.get("prompt_geo", "Unknown")
+        
         print(f"🔊 Playing audio for: {audio_target}")
+        
+        if audio_file and self.page:
+            # Play actual audio file using Flet's Audio control
+            audio_player = ft.Audio(src=audio_file, autoplay=True)
+            self.page.overlay.append(audio_player)
+            self.page.update()
 
     def _handle_click(self, selected, correct):
         is_correct = (selected == correct)

@@ -5,6 +5,7 @@
 import sqlite3
 import os
 import datetime
+import random
 
 class ProgressDBManager:
     def __init__(self, db_name="user_progress.db"):
@@ -223,29 +224,93 @@ class ContentDBManager:
         return res
 
     def get_word_details(self, content_id):
-        """Fetches details for a single target word."""
+        """Fetches details for a target word along with image and audio file paths from relational media tables."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT content_id, georgian, english, transliteration FROM content WHERE content_id = ?", (content_id,))
+
+        cursor.execute("""
+            SELECT 
+                c.content_id, 
+                c.georgian, 
+                c.english, 
+                c.transliteration,
+                (SELECT m.file_path 
+                 FROM media m 
+                 JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                 WHERE m.content_id = c.content_id AND LOWER(mt.name) = 'image' LIMIT 1) AS image,
+                (SELECT m.file_path 
+                 FROM media m 
+                 JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                 WHERE m.content_id = c.content_id AND LOWER(mt.name) = 'audio' LIMIT 1) AS audio
+            FROM content c
+            WHERE c.content_id = ?
+        """, (content_id,))
+
         res = cursor.fetchone()
         conn.close()
-        return res
+        return res  # Returns: (content_id, georgian, english, transliteration, image_path, audio_path)
 
     def get_convo_pair_details(self, pair_id):
-        """Fetches matched conversational components (prompt questions & responses)."""
+        """Fetches matched conversational components with support for multiple correct responses."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT cp.prompt_id, cp.response_id, 
-                   p.georgian, p.english, r.georgian, r.english
-            FROM convo_pairs cp
-            JOIN content p ON cp.prompt_id = p.content_id
-            JOIN content r ON cp.response_id = r.content_id
-            WHERE cp.pair_id = ? 
-        """, (pair_id,))
-        res = cursor.fetchone()
-        conn.close()
-        return res
+        
+        try:
+            # 1. Resolve prompt_content_id (pair_id might be a rowid or a content_id)
+            cursor.execute("""
+                SELECT prompt_content_id FROM convo_pairs 
+                WHERE rowid = ? OR prompt_content_id = ? 
+                LIMIT 1
+            """, (pair_id, pair_id))
+            prompt_res = cursor.fetchone()
+            
+            if not prompt_res:
+                return None
+            
+            prompt_content_id = prompt_res[0]
+
+            # 2. Fetch prompt details
+            cursor.execute("SELECT georgian, english FROM content WHERE content_id = ?", (prompt_content_id,))
+            prompt_row = cursor.fetchone()
+            if not prompt_row:
+                return None
+
+            # 3. Fetch ALL valid responses linked to this prompt
+            cursor.execute("""
+                SELECT c.content_id, c.georgian, c.english 
+                FROM convo_pairs cp
+                JOIN content c ON cp.response_content_id = c.content_id
+                WHERE cp.prompt_content_id = ?
+            """, (prompt_content_id,))
+            valid_responses = cursor.fetchall()
+            
+            if not valid_responses:
+                return None
+
+            # 4. Pick ONE valid response at random for this exercise instance
+            selected_correct_response = random.choice(valid_responses)
+            all_valid_response_ids = tuple(r[0] for r in valid_responses)
+
+            # 5. Fetch 2 distractors that are NOT valid responses for this prompt
+            placeholders = ','.join('?' * len(all_valid_response_ids))
+            distractor_query = f"""
+                SELECT georgian, english 
+                FROM content 
+                WHERE content_id NOT IN ({placeholders}) 
+                AND type_id = (SELECT type_id FROM types WHERE name='phrase')
+                ORDER BY RANDOM() LIMIT 2
+            """
+            cursor.execute(distractor_query, all_valid_response_ids)
+            distractors = cursor.fetchall()
+
+            return {
+                'prompt': {'georgian': prompt_row[0], 'english': prompt_row[1]},
+                'correct_response': {'georgian': selected_correct_response[1], 'english': selected_correct_response[2]},
+                'all_valid_responses': [r[1] for r in valid_responses],
+                'distractors': [{'georgian': d[0], 'english': d[1]} for d in distractors]
+            }
+        finally:
+            conn.close()
 
     def get_dialogue_details(self, dialogue_id):
         """Fetches dialogue metadata."""
@@ -384,6 +449,52 @@ class ContentDBManager:
             
         conn.close()
         return distractors[:limit]
+
+
+
+    def get_convo_pair_for_lesson(self, lesson_id, distractor_limit=3):
+        """Fetches a conversation pair for a lesson and uses context-aware distractors."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # 1. Fetch a target conversational pair for this specific lesson
+        query = """
+            SELECT 
+                p.georgian AS prompt_geo,
+                p.transliteration AS prompt_trans,
+                r.georgian AS correct_geo,
+                cp.response_content_id
+            FROM convo_pairs cp
+            JOIN content p ON cp.prompt_content_id = p.content_id
+            JOIN content r ON cp.response_content_id = r.content_id
+            JOIN lesson_contents lc ON cp.prompt_content_id = lc.associated_id
+            WHERE lc.lesson_id = ?
+            ORDER BY RANDOM() LIMIT 1;
+        """
+        cursor.execute(query, (lesson_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None, []
+
+        prompt_geo, prompt_trans, correct_geo, response_id = row
+
+        target_data = {
+            "prompt_geo": prompt_geo,
+            "prompt_trans": prompt_trans,
+            "correct_geo": correct_geo
+        }
+
+        # 2. Leverage your SMART distractor function!
+        raw_distractors = self.get_convo_distractors(lesson_id, response_id, limit=distractor_limit)
+        
+        # get_convo_distractors returns tuples (georgian, english); extract just the Georgian strings
+        distractors = [d[0] for d in raw_distractors]
+
+        return target_data, distractors
+
+
 
     def find_next_incomplete_lesson_coordinates(self, completed_ids):
         """Scans the curriculum to find sequence orders for the next incomplete lesson."""
