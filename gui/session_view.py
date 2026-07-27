@@ -20,7 +20,8 @@ class SessionView(ft.Column):
         
         # Setup Static UI Elements
         self.progress_bar = ft.ProgressBar(width=400, value=0.0, color=ft.Colors.GREEN_600, bgcolor=ft.Colors.GREY_200)
-        self.status_text = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+        self.status_text = ft.Text("", size=18, weight=ft.FontWeight.BOLD)
+        # says correct or incorrect
         
         # This container is our "stage"
         # This container is our "stage"
@@ -29,15 +30,15 @@ class SessionView(ft.Column):
         # --- UPDATED CODE: Create a permanent, hidden Continue button ---
         self.continue_btn = ft.Container(
             content=ft.ElevatedButton(
-                text="Continue ➔",
+                content=ft.Text("Continue ➔", size=20, weight=ft.FontWeight.BOLD),  # <-- Larger text with bold weight
                 bgcolor=ft.Colors.BLUE_600,
                 color=ft.Colors.WHITE,
-                height=50,
-                width=200,
+                height=70,
+                width=220,
                 on_click=lambda _: self._clear_and_load_next()
             ),
             visible=False,
-            padding=ft.padding.only(bottom=25, top=10) # <-- Adds space above the bottom screen edge
+            padding=ft.padding.only(bottom=50, top=10) # <-- Adds space above the bottom screen edge
         )
         
         self.controls = [

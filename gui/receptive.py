@@ -78,6 +78,10 @@ class MultipleChoiceCard(ft.Container):
                 geo_text = self.target.get("quote_geo", "")
                 correct_ans = self.target.get("correct_eng", "")
                 trans_text = self.target.get("trans", "")
+            else:
+                geo_text = self.target.get("geo") or self.target.get("prompt", "Missing Prompt")
+                correct_ans = self.target.get("eng") or self.target.get("correct", "Missing Answer")
+                trans_text = self.target.get("trans", "")
 
             # Georgian Prompt Row with Audio Button
             prompt_ui = ft.Row([
@@ -90,8 +94,12 @@ class MultipleChoiceCard(ft.Container):
                 )
             ], alignment=ft.MainAxisAlignment.CENTER, wrap=True)
 
-            if trans_text:
-                subtitle_ui = ft.Text(trans_text, size=16, color=ft.Colors.GREY_500, italic=True)
+            #if trans_text:
+            #    subtitle_ui = ft.Text(trans_text, size=16, color=ft.Colors.GREY_500, italic=True)
+            #else:
+            #    subtitle_ui = ft.Container()
+            subtitle_ui = ft.Text(trans_text, size=16, color=ft.Colors.GREY_500, italic=True)
+
 
         # -------------------------------------------------------------
         # 3. ENGLISH / OTHER PROMPTS: Clean Text Prompt
@@ -109,8 +117,41 @@ class MultipleChoiceCard(ft.Container):
                 prompt_text = self.target.get("prompt", self.target.get("eng", "Missing Prompt"))
                 correct_ans = self.target.get("correct", self.target.get("geo", "Missing Answer"))
 
-            prompt_ui = ft.Text(prompt_text, size=28, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
+            # ---------------------------------------------------------
+            # Image / Placeholder Widget
+            # ---------------------------------------------------------
+            image_src = self.target.get("image", None)
 
+            if image_src:
+                # Real Image (when provided in target dict)
+                image_widget = ft.Image(
+                    src=image_src,
+                    width=160,
+                    height=110,
+                    fit=ft.ImageFit.CONTAIN,
+                    border_radius=ft.border_radius.all(10)
+                )
+            else:
+                # Placeholder Box (when no image exists yet)
+                image_widget = ft.Container(
+                    width=160,
+                    height=110,
+                    bgcolor=ft.Colors.GREY_100,
+                    border_radius=12,
+                    border=ft.border.all(1, ft.Colors.GREY_300),
+                    alignment=ft.alignment.center,
+                    content=ft.Icon(ft.Icons.IMAGE_OUTLINED, size=40, color=ft.Colors.GREY_400)
+                )
+
+            # Stack the Image/Placeholder on top of your existing text prompt
+            prompt_ui = ft.Column(
+                controls=[
+                    image_widget,
+                    ft.Text(prompt_text, size=28, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8
+            )
         # -------------------------------------------------------------
         # 4. Build Distractor Options
         # -------------------------------------------------------------
@@ -138,11 +179,16 @@ class MultipleChoiceCard(ft.Container):
                 prompt_ui,
                 subtitle_ui,
                 ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
-                *self.option_buttons
+                # Group buttons in a nested Column with dedicated spacing
+                ft.Column(
+                    controls=self.option_buttons,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=12  # <-- Adjust space BETWEEN option buttons here!
+                )
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.START,
-            spacing=5 # Tightens space between prompt and subtitle
+            spacing=5  # Keeps prompt and subtitle tightly stacked
         )
 
     def trigger_audio(self, text: str = None):

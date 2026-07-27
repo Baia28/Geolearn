@@ -105,19 +105,10 @@ class TypeGeorgian(ft.Column):
         self.on_submit = on_submit
         self.evaluated = False
         
-        #####
-        # Lifts content upward towards the progress bar
-        self.padding = ft.padding.only(top=0, left=15, right=15, bottom=5)
-        self.alignment = ft.alignment.top_center  # <-- Ensures top alignment
-        self.border_radius = 12
-        #####
-
+        # Proper Column alignment and tight gap spacing (replaces dividers)
         self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-        
-        # State tracking for two-step feedback (Check -> Continue)
-        #self.evaluated = False
-        #self.is_correct = False
-        #self.user_text = ""
+        self.alignment = ft.MainAxisAlignment.START
+        self.spacing = 14  # Tightens spacing across all elements
         
         self._build_ui()
 
@@ -125,12 +116,17 @@ class TypeGeorgian(ft.Column):
         # 1. Setup Prompt UI according to Mode
         if self.mode == "audio_dictation":
             prompt_ui = ft.Container(
-                width=100, height=100, bgcolor=ft.Colors.BLUE_100, border_radius=50,
-                alignment=ft.alignment.center, ink=True,
+                width=90, 
+                height=90, 
+                bgcolor=ft.Colors.BLUE_100, 
+                border_radius=45,
+                alignment=ft.alignment.center, 
+                ink=True,
                 on_click=lambda e: self.trigger_audio(),
-                content=ft.Icon(ft.Icons.VOLUME_UP_ROUNDED, size=40, color=ft.Colors.BLUE_700)
+                content=ft.Icon(ft.Icons.VOLUME_UP_ROUNDED, size=38, color=ft.Colors.BLUE_700),
+                margin=ft.margin.only(top=-5)  # Lift audio icon closer to progress bar
             )
-            subtitle_ui = ft.Text("Listen and type in Georgian", size=14, color=ft.Colors.GREY_500, italic=True)
+            subtitle_ui = ft.Text("Listen and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
             self.trigger_audio()
         else:
             prompt_ui = ft.Text(self.target.get("eng", ""), size=28, weight=ft.FontWeight.W_500)
@@ -149,37 +145,44 @@ class TypeGeorgian(ft.Column):
             on_key_tap=self._append_char,
             on_backspace=self._remove_char
         )
+        self.keyboard.margin = ft.margin.only(top=-2)  # Tighten gap under input/feedback panel
         
         # 4. Feedback Box (Hidden until user checks answer)
         self.feedback_container = ft.Container(visible=False)
         
-        # 5. Action Button
-        self.submit_btn = ft.ElevatedButton("Check Answer", width=350, height=50, on_click=self._validate)
+        # 5. Blue Action Button (Wrapped in Container for negative top margin)
+        self.submit_btn = ft.Container(
+            content=ft.ElevatedButton(
+                "Check Answer", 
+                width=350, 
+                height=48, 
+                bgcolor=ft.Colors.BLUE_600,
+                color=ft.Colors.WHITE,
+                on_click=self._validate
+            ),
+            margin=ft.margin.only(top=-4)  # Pulls blue button up closer to spacebar
+        )
         
-        # Assemble
+        # Assemble layout without transparent Dividers
         self.controls = [
             prompt_ui,
             subtitle_ui,
-            ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
             self.input_field, 
-            ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
             self.feedback_container,
-            ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
             self.keyboard,
-            ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
             self.submit_btn
         ]
 
     def _append_char(self, char):
         if self.evaluated:
-            return # Block typing during feedback phase
+            return  # Block typing during feedback phase
         current_text = self.input_field.value if self.input_field.value else ""
         self.input_field.value = current_text + char
         self.input_field.update()
 
     def _remove_char(self):
         if self.evaluated:
-            return # Block backspace during feedback phase
+            return  # Block backspace during feedback phase
         current_text = self.input_field.value if self.input_field.value else ""
         if len(current_text) > 0:
             self.input_field.value = current_text[:-1]
@@ -188,7 +191,6 @@ class TypeGeorgian(ft.Column):
     def trigger_audio(self):
         print(f"🔊 Playing audio for: {self.target.get('geo', 'Unknown')}")
 
-
     def _validate(self, e):
         if self.evaluated:
             return
@@ -196,7 +198,6 @@ class TypeGeorgian(ft.Column):
         self.user_text = self.input_field.value.strip() if self.input_field.value else ""
         target_text = self.target.get("geo", "").strip()
 
-        # 1. Clean punctuation for comparison
         punctuation = "!?.,;:'\""
         clean_user = self.user_text.translate(str.maketrans('', '', punctuation)).lower()
         clean_target = target_text.translate(str.maketrans('', '', punctuation)).lower()
@@ -204,12 +205,11 @@ class TypeGeorgian(ft.Column):
         self.is_correct = (clean_user == clean_target)
         self.evaluated = True
 
-        # 2. Lock inputs & hide internal keyboard/button so session_view takes over
+        # Lock inputs & hide internal keyboard/button so session_view takes over
         self.input_field.disabled = True
         self.keyboard.visible = False
-        self.submit_btn.visible = False  # Hides internal button
+        self.submit_btn.visible = False  # Hides container and button seamlessly
 
-        # 3. Configure visual feedback styles
         bg_color = ft.Colors.GREEN_50 if self.is_correct else ft.Colors.RED_50
         border_color = ft.Colors.GREEN_400 if self.is_correct else ft.Colors.RED_400
         icon_name = ft.Icons.CHECK_CIRCLE if self.is_correct else ft.Icons.CANCEL
@@ -219,7 +219,6 @@ class TypeGeorgian(ft.Column):
         geo_target = self.target.get("geo", "")
         trans_target = self.target.get("trans", "")
 
-        # 4. Construct Feedback Panel UI
         feedback_column = [
             ft.Row([
                 ft.Icon(icon_name, color=icon_color, size=24),
@@ -250,11 +249,8 @@ class TypeGeorgian(ft.Column):
         self.feedback_container.width = 350
         self.feedback_container.visible = True
 
-        # Auto-play correct audio if answer was incorrect
         if not self.is_correct:
             self.trigger_audio()
 
         self.update()
-
-        # 5. Hand control off to session_view's global continue workflow
         self.on_submit(self.is_correct, user_input=self.user_text)
