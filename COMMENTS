@@ -20,3 +20,12 @@
 ###### GUI ######
 #Flet|||	Web, mobile, and desktop with Flutter UI	Low/Medium	Modern, beautiful	Excellent
 #Kivy|||    Cross-platform (incl. mobile), custom UIs	Medium/High	Unique, modern	Excellent
+
+
+
+Hey. So I need to work on my database for content_poolbook.db. here is the deal. 
+
+how would we do option A. Also considering that problematic is that dialogues sometimes use those words, in phrases form so... if in my first hand provided dialogue excel sheet I include something that is similar to what it is but is not the full string match it will give me an error. so what do you think?.. (maybe we look into the dialogue importer, since for dialogues we already are kind of running the search (or somehting like that you will understand better once I show it to you, then you get better idea) somehow we save those matching id so დიახ is one that's there but somehow we just add ! for that dialogues to display. what would you think of that
+
+
+I need to add instructions to each excersise...

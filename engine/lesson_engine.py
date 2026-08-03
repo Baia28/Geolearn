@@ -87,13 +87,13 @@ class LessonSession:
             if content_id.startswith("pair_"):
                 try:
                     clean_content_id = int(content_id.split("_")[1])
-                except ValueError:
+                except (ValueError, IndexError):
                     pass
-            # Parse 'diag_XX_rp' or 'diag_XX_comp' -> XX
+            # Parse 'diag_XX_live', 'diag_XX_rp', or 'diag_XX_comp' -> XX
             elif content_id.startswith("diag_"):
                 try:
                     clean_content_id = int(content_id.split("_")[1])
-                except ValueError:
+                except (ValueError, IndexError):
                     pass
 
         # Log metrics to database (Skips purely passive study references)

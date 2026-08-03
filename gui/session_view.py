@@ -8,12 +8,14 @@ from gui.production import TypeGeorgian, MatchMatrix3x3
 from gui.dialogues import DialoguePassiveView, LiveDialogueView
 
 class SessionView(ft.Column):
-    def __init__(self, page: ft.Page, phase=None, unit=None, lesson=None):
+    def __init__(self, page: ft.Page, phase=None, unit=None, lesson=None, on_return=None):
         super().__init__()
         self.page = page
+        self.on_return = on_return # <-- Store it
         self.alignment = ft.MainAxisAlignment.CENTER
         self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
         self.expand = True
+        self.scroll = ft.ScrollMode.AUTO  
         
         # Initialize the Core Engine
         self.engine = LessonSession(phase_num=phase, unit_num=unit, lesson_num=lesson)
@@ -129,8 +131,8 @@ class SessionView(ft.Column):
                 on_continue=lambda complete: self._handle_submission(True)
             )
             
-        # 5. Route: Live Interactive Dialogue
-        elif activity == "dialogue_interactive":
+        # 5. Route: Live Interactive Dialogue (Roleplay)
+        elif activity in ["dialogue_roleplay_mc", "dialogue_activity", "dialogue_interactive"]:
             self.card_stage.content = LiveDialogueView(
                 steps=card_data.get("target", {}).get("steps", []),
                 on_submit=lambda complete: self._handle_submission(True)
@@ -176,7 +178,10 @@ class SessionView(ft.Column):
             controls=[
                 ft.Icon(ft.Icons.EMOJI_EVENTS, size=80, color=ft.Colors.AMBER),
                 ft.Text("Lesson Completed!", size=36, weight=ft.FontWeight.BOLD),
-                ft.ElevatedButton("Return to Home", on_click=lambda e: print("Routing home..."))
+                ft.ElevatedButton(
+                    "Return to Unit ➔", 
+                    on_click=lambda e: self.on_return() if self.on_return else print("No route for unit provided.")
+                )
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.CENTER

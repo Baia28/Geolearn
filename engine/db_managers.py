@@ -322,14 +322,18 @@ class ContentDBManager:
         return res
 
     def get_dialogue_lines(self, dialogue_id):
-        """Fetches lines in alphabetical / order sequence for a targeted dialogue block."""
+        """Fetches ordered dialogue lines with display_text fallback."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT dl.speaker, c.georgian, c.transliteration, c.english 
+            SELECT 
+                dl.speaker,
+                COALESCE(dl.display_text, c.georgian) AS rendered_georgian,
+                c.transliteration,
+                c.english
             FROM dialogue_lines dl
             JOIN content c ON dl.content_id = c.content_id
-            WHERE dl.dialogue_id = ? 
+            WHERE dl.dialogue_id = ?
             ORDER BY dl.line_order ASC
         """, (dialogue_id,))
         lines = cursor.fetchall()
@@ -403,15 +407,18 @@ class ContentDBManager:
         conn.close()
         return distractors[:limit]
 
-    def get_convo_distractors(self, lesson_id, correct_response_id, limit=2):
-        """Pulls contextual conversational response alternatives."""
+    def get_convo_distractors(self, lesson_id, exclude_text="", limit=2):
+        """Pulls contextual conversational response alternatives with full translation & transliteration metadata.
+        while strictly excluding the correct answer text to prevent duplicate options. """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         distractors = []
-        
+
+        exclude_text_clean = exclude_text.strip() if exclude_text else ""
+
         # Tier 1: Same Unit with 'response' tags
         cursor.execute("""
-            SELECT DISTINCT c.georgian, c.english 
+            SELECT DISTINCT c.georgian, c.english, c.transliteration 
             FROM content c
             JOIN content_tags ct ON c.content_id = ct.content_id
             JOIN tags t ON ct.tag_id = t.tag_id
@@ -421,28 +428,29 @@ class ContentDBManager:
               AND l.unit_id = (SELECT unit_id FROM lessons WHERE lesson_id = ?)
               AND c.content_id != ?
             ORDER BY RANDOM() LIMIT ?
-        """, (lesson_id, correct_response_id, limit))
+        """, (lesson_id, exclude_text_clean, limit))
         distractors.extend(cursor.fetchall())
         
         # Tier 2: Global conversational alternatives fallback
         if len(distractors) < limit:
             needed = limit - len(distractors)
-            picked_geo = [row[0] for row in distractors]
-            
-            query = """
-                SELECT DISTINCT c.georgian, c.english 
+
+            # Collect all already picked texts (including correct answer) to avoid duplicates
+            already_picked = [exclude_text_clean] + [row[0].strip() for row in distractors]
+
+            placeholders = ','.join(['?'] * len(already_picked))
+
+            query = f"""
+                SELECT DISTINCT c.georgian, c.english, c.transliteration 
                 FROM content c
                 JOIN content_tags ct ON c.content_id = ct.content_id
                 JOIN tags t ON ct.tag_id = t.tag_id
-                WHERE t.name = 'response' AND c.content_id != ?
+                WHERE t.name = 'response' 
+                  AND TRIM(c.georgian) NOT IN ({placeholders})
+                ORDER BY RANDOM() LIMIT ?
             """
-            params = [correct_response_id]
-            if picked_geo:
-                placeholders = ','.join(['?'] * len(picked_geo))
-                query += f" AND c.georgian NOT IN ({placeholders})"
-                params.extend(picked_geo)
-            query += " ORDER BY RANDOM() LIMIT ?"
-            params.append(needed)
+
+            params = already_picked + [needed]
             
             cursor.execute(query, params)
             distractors.extend(cursor.fetchall())

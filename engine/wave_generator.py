@@ -262,47 +262,70 @@ class WaveGenerator:
 
     def _generate_dialogue_cards(self, dialogues, lesson_id):
         """
-        Builds reading references and a step-by-step interactive live dialogue.
+        Builds passive reading references and interactive dialogues where:
+        - Speaker A lines are always automatically posted as prompts.
+        - Speaker B lines are always user choices with full feedback metadata.
         """
         cards = []
-        for step_order, assoc_id, dialogue_data in dialogues:
+        for _, _, dialogue_data in dialogues:
             dialogue_id = dialogue_data[0]
-            diag_code = dialogue_data[1]
+            #diag_code = dialogue_data[1]
             
             lines = self.content_db.get_dialogue_lines(dialogue_id)
             
-            # Step A: Passive Reading reference slide
-            cards.append({
-                "content_id": f"diag_{dialogue_id}",
-                "activity": "dialogue_passive",
-                "target": {"id": dialogue_id, "code": diag_code, "lines": lines}
-            })
+            ## Step A: Passive Reading reference slide
+            #cards.append({
+            #    "content_id": f"diag_{dialogue_id}",
+            #    "activity": "dialogue_passive",
+            #    "target": {"id": dialogue_id, "code": diag_code, "lines": lines}
+            #})
             
             # Step B: Live Interactive Chat Simulator
             if len(lines) >= 2:
                 interactive_steps = []
                 
-                for idx, line in enumerate(lines):
+                for line in lines:
+                    # Tuple from get_dialogue_lines: (speaker, rendered_georgian, transliteration, english)
                     speaker, geo, trans, eng = line
                     
-                    if idx % 2 == 0:
+                    if speaker.upper() == "A":
+                        # Speaker A is ALWAYS an automated prompt
                         interactive_steps.append({
                             "type": "prompt", 
-                            "speaker": speaker, 
-                            "text": geo
+                            "speaker": "A", 
+                            "text": geo,
+                            "transliteration": trans,
+                            "english": eng
                         })
                     else:
-                        distractors = self.content_db.get_convo_distractors(lesson_id, 0, limit=2)
+                        # Speaker B is ALWAYS the user's turn
+                        raw_distractors = self.content_db.get_convo_distractors(
+                            lesson_id, 
+                            exclude_text=geo, 
+                            limit=2
+                        )
+                        distractor_objs = []
+                        for d in raw_distractors:
+                            distractor_objs.append({
+                                "geo": d[0],
+                                "eng": d[1] if len(d) > 1 and d[1] else "",
+                                "trans": d[2] if len(d) > 2 and d[2] else ""
+                            })
+
                         interactive_steps.append({
                             "type": "choice",
-                            "speaker": speaker,
-                            "correct": geo,
-                            "distractors": [d[0] for d in distractors]
+                            "speaker": "B",
+                            "correct": {
+                                "geo": geo,
+                                "eng": eng,
+                                "trans": trans
+                            },
+                            "distractors": distractor_objs
                         })
                 
                 cards.append({
                     "content_id": f"diag_{dialogue_id}_live",
-                    "activity": "dialogue_interactive",
+                    "activity": "dialogue_roleplay_mc",
                     "target": {"steps": interactive_steps}
                 })
                 
