@@ -224,6 +224,10 @@ class WaveGenerator:
             return []
             
         total_words = len(vocab_list)
+
+        # If there is only 1 word in the entire lesson, skip the matrix entirely
+        if total_words < 2:
+            return []
         
         import math
         num_matrices = max(1, math.ceil(total_words / 5.0))
@@ -235,6 +239,11 @@ class WaveGenerator:
         for i in range(num_matrices):
             size = base_size + (1 if i < remainder else 0)
             sizes.append(size)
+
+        # Security check: If the last matrix only has 1 item, merge it with the previous matrix
+        if len(sizes) > 1 and sizes[-1] < 2:
+            sizes[-2] += sizes[-1]
+            sizes.pop()
             
         matrix_cards = []
         current_index = 0

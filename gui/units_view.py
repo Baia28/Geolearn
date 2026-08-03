@@ -85,11 +85,19 @@ class UnitsView(ft.Column):
             )
             unit_cards.append(card)
 
-        units_column = ft.Column(controls=unit_cards, spacing=12, width=600)
+        # Enable scrolling and lock width
+        units_column = ft.Column(
+            controls=unit_cards, 
+            spacing=12, 
+            width=600, 
+            scroll=ft.ScrollMode.AUTO, 
+            expand=True
+        )
 
         self.controls = [
             nav_bar,
             header,
             ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
-            units_column
+            # Wrap in a container to keep it perfectly centered on wide screens
+            ft.Container(content=units_column, alignment=ft.alignment.top_center, expand=True)
         ]

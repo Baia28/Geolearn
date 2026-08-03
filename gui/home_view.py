@@ -114,7 +114,7 @@ class HomeView(ft.Column):
             )
             curriculum_controls.append(phase_card)
 
-        curriculum_column = ft.Column(controls=curriculum_controls, spacing=10, expand=True)
+        curriculum_column = ft.Column(controls=curriculum_controls, spacing=10, expand=True, scroll=ft.ScrollMode.AUTO)
 
         # 3. RIGHT SIDEBAR (Extra Entities & Quick Modules)
         sidebar_controls = [
@@ -190,14 +190,20 @@ class HomeView(ft.Column):
         sidebar_column = ft.Column(controls=sidebar_controls, spacing=10, width=280)
 
         # 4. ASSEMBLE MAIN LAYOUT
-        main_content_row = ft.Row(
-            controls=[
-                curriculum_column,
-                ft.VerticalDivider(width=20, color=ft.Colors.GREY_200),
-                sidebar_column
-            ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            vertical_alignment=ft.CrossAxisAlignment.START,
+        #Wrap the main row in a Container to lock the max width and center it
+        main_content_row = ft.Container(
+            content=ft.Row(
+                controls=[
+                    curriculum_column,
+                    ft.VerticalDivider(width=20, color=ft.Colors.GREY_200),
+                    sidebar_column
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                expand=True
+            ),
+            width=1000,
+            alignment=ft.alignment.top_center,
             expand=True
         )
 

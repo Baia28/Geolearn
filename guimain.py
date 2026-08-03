@@ -101,17 +101,26 @@ def main(page: ft.Page):
 
     def show_session(phase=None, unit=None, lesson=None):
         """Launches the interactive flashcard / study session runner."""
+
+        # Define dynamic return route
+        def handle_return():
+            if phase is not None and unit is not None:
+                show_lessons(phase, unit)
+            else:
+                show_home()
+                
         session_view = SessionView(
             page=page, 
             phase=phase, 
             unit=unit, 
-            lesson=lesson
+            lesson=lesson,
+            on_return=handle_return
         )
         
         # Add a top bar to allow quitting back to Home at any time during a session
         exit_bar = ft.Row(
             controls=[
-                ft.TextButton("Exit Session", icon=ft.Icons.CLOSE, on_click=lambda e: show_home())
+                ft.TextButton("Exit Session", icon=ft.Icons.CLOSE, on_click=lambda e: handle_return())
             ],
             alignment=ft.MainAxisAlignment.START
         )

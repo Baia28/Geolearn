@@ -27,6 +27,22 @@ class MatchMatrix3x3(ft.Container):
         
         geo_col = ft.Column([self._create_btn(b) for b in geo_buttons], spacing=10)
         eng_col = ft.Column([self._create_btn(b) for b in eng_buttons], spacing=10)
+
+        grid_row = ft.Row(
+            controls=[geo_col, eng_col],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=40
+        )
+
+        # Add instructional text above the grid
+        self.content = ft.Column(
+            controls=[
+                ft.Text("Match the corresponding pairs", size=16, color=ft.Colors.GREY_500, italic=True),
+                grid_row
+            ],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=20
+        )
             
         self.content = ft.Row(
             controls=[geo_col, eng_col],
@@ -130,7 +146,8 @@ class TypeGeorgian(ft.Column):
             self.trigger_audio()
         else:
             prompt_ui = ft.Text(self.target.get("eng", ""), size=28, weight=ft.FontWeight.W_500)
-            subtitle_ui = ft.Container()
+            # Add clear instructions for typing
+            subtitle_ui = ft.Text("Translate and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
 
         # 2. Input Field
         self.input_field = ft.TextField(

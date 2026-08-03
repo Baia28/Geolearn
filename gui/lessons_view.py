@@ -111,7 +111,7 @@ class LessonsView(ft.Column):
             )
             lesson_cards.append(card)
 
-        lessons_column = ft.Column(controls=lesson_cards, spacing=10, expand=True)
+        lessons_column = ft.Column(controls=lesson_cards, spacing=10, expand=True, scroll=ft.ScrollMode.AUTO)
 
         # 4. Unit Tools Sidebar (Right Column)
         side_options = [
@@ -124,7 +124,7 @@ class LessonsView(ft.Column):
                     on_click=lambda e: self.on_unit_review(self.phase_num, self.unit_num),
                     content=ft.Column(
                         controls=[
-                            ft.Row([ft.Icon(ft.Icons.REPLAY, color=ft.Colors.AMBER_700), ft.Text("Unit SRS Review", weight=ft.FontWeight.BOLD)]),
+                            ft.Row([ft.Icon(ft.Icons.REPLAY, color=ft.Colors.AMBER_700), ft.Text("Unit Review", weight=ft.FontWeight.BOLD)]),
                             ft.Text("Review at least 15 vocabulary items from this unit.", size=11, color=ft.Colors.GREY_600)
                         ],
                         spacing=5
@@ -152,14 +152,20 @@ class LessonsView(ft.Column):
         side_column = ft.Column(controls=side_options, spacing=10, width=260)
 
         # 5. Assemble Main Layout
-        main_row = ft.Row(
-            controls=[
-                lessons_column,
-                ft.VerticalDivider(width=20, color=ft.Colors.GREY_200),
-                side_column
-            ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            vertical_alignment=ft.CrossAxisAlignment.START,
+        # WRAPPED IN CONTAINER (width=1000) TO CENTER ON STRETCHED SCREENS
+        main_row = ft.Container(
+            content=ft.Row(
+                controls=[
+                    lessons_column,
+                    ft.VerticalDivider(width=20, color=ft.Colors.GREY_200),
+                    side_column
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                expand=True
+            ),
+            width=1000,
+            alignment=ft.alignment.top_center,
             expand=True
         )
 
