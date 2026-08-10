@@ -322,13 +322,13 @@ class ContentDBManager:
         return res
 
     def get_dialogue_lines(self, dialogue_id):
-        """Fetches ordered dialogue lines with display_text fallback."""
+        """Fetches ordered dialogue lines directly from connected content records."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
                 dl.speaker,
-                COALESCE(dl.display_text, c.georgian) AS rendered_georgian,
+                c.georgian AS rendered_georgian,
                 c.transliteration,
                 c.english
             FROM dialogue_lines dl
@@ -412,9 +412,10 @@ class ContentDBManager:
         while strictly excluding the correct answer text to prevent duplicate options. """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        distractors = []
 
         exclude_text_clean = exclude_text.strip() if exclude_text else ""
+        distractors = []
+
 
         # Tier 1: Same Unit with 'response' tags
         cursor.execute("""

@@ -20,6 +20,38 @@ class MultipleChoiceCard(ft.Container):
         subtitle_ui = ft.Container()
         correct_ans = "Missing Answer"
 
+        # --- NEW: Dynamic Instruction Banner Logic ---
+        task_instruction = "Select the correct answer"
+        task_icon = ft.Icons.TOUCH_APP
+
+        if "audio_mc" in self.mode:
+            task_instruction = "Listen and select the correct meaning"
+            task_icon = ft.Icons.HEADPHONES
+        elif self.mode == "mc_geo_to_eng":
+            task_instruction = "Translate to English"
+            task_icon = ft.Icons.TRANSLATE
+        elif self.mode == "mc_eng_to_geo":
+            task_instruction = "How do you say this in Georgian?"
+            task_icon = ft.Icons.LANGUAGE
+        elif self.mode == "mc_geo_pair_geo":
+            task_instruction = "Choose the most natural response"
+            task_icon = ft.Icons.FORUM
+        elif self.mode == "dialogue_context_mc":
+            task_instruction = "What does this quote mean?"
+            task_icon = ft.Icons.MENU_BOOK
+        elif self.mode == "dialogue_roleplay_mc":
+            task_instruction = "Complete the conversation"
+            task_icon = ft.Icons.PERSON_ADD
+
+        instruction_ui = ft.Row(
+            controls=[
+                ft.Icon(task_icon, size=16, color=ft.Colors.GREY_500),
+                ft.Text(task_instruction, size=14, color=ft.Colors.GREY_600, weight=ft.FontWeight.W_500, italic=True)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=6
+        )
+
         # -------------------------------------------------------------
         # 1. AUDIO MODES: Massive Audio Button + Guidance Subtitle
         # -------------------------------------------------------------
@@ -196,6 +228,8 @@ class MultipleChoiceCard(ft.Container):
         # -------------------------------------------------------------
         self.content = ft.Column(
             controls=[
+                instruction_ui,  
+                ft.Container(height=5), # Slight padding below instruction
                 prompt_ui,
                 subtitle_ui,
                 ft.Divider(height=10, color=ft.Colors.TRANSPARENT),

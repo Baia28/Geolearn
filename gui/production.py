@@ -16,6 +16,7 @@ class MatchMatrix3x3(ft.Container):
     def _build_grid(self):
         # Separate Georgian and English into two clean columns
         geo_buttons = []
+    
         eng_buttons = []
         
         for t in self.targets:
@@ -28,26 +29,32 @@ class MatchMatrix3x3(ft.Container):
         geo_col = ft.Column([self._create_btn(b) for b in geo_buttons], spacing=10)
         eng_col = ft.Column([self._create_btn(b) for b in eng_buttons], spacing=10)
 
+        # 1. Group the columns into a Row first (this used to be self.content directly)
         grid_row = ft.Row(
             controls=[geo_col, eng_col],
             alignment=ft.MainAxisAlignment.CENTER,
             spacing=40
         )
 
-        # Add instructional text above the grid
+        # 2. Create the beautiful Instruction Banner
+        instruction_ui = ft.Row(
+            controls=[
+                ft.Icon(ft.Icons.JOIN_INNER, size=16, color=ft.Colors.GREY_500),
+                ft.Text("Match the corresponding pairs", size=14, color=ft.Colors.GREY_600, weight=ft.FontWeight.W_500, italic=True)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=6
+        )
+
+        # 3. Stack the instruction banner on top of the grid
         self.content = ft.Column(
             controls=[
-                ft.Text("Match the corresponding pairs", size=16, color=ft.Colors.GREY_500, italic=True),
+                instruction_ui,
+                ft.Container(height=10),
                 grid_row
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=20
-        )
-            
-        self.content = ft.Row(
-            controls=[geo_col, eng_col],
-            alignment=ft.MainAxisAlignment.CENTER,
-            spacing=40
+            spacing=0
         )
 
     def _create_btn(self, data):
@@ -129,6 +136,19 @@ class TypeGeorgian(ft.Column):
         self._build_ui()
 
     def _build_ui(self):
+        # Dynamic Instruction Banner 
+        task_icon = ft.Icons.HEADSET if self.mode == "audio_dictation" else ft.Icons.KEYBOARD
+        task_instruction = "Listen and type what you hear" if self.mode == "audio_dictation" else "Translate and type in Georgian"
+        
+        instruction_ui = ft.Row(
+            controls=[
+                ft.Icon(task_icon, size=16, color=ft.Colors.GREY_500),
+                ft.Text(task_instruction, size=14, color=ft.Colors.GREY_600, weight=ft.FontWeight.W_500, italic=True)
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=6
+        )
+
         # 1. Setup Prompt UI according to Mode
         if self.mode == "audio_dictation":
             prompt_ui = ft.Container(
@@ -142,12 +162,12 @@ class TypeGeorgian(ft.Column):
                 content=ft.Icon(ft.Icons.VOLUME_UP_ROUNDED, size=38, color=ft.Colors.BLUE_700),
                 margin=ft.margin.only(top=-5)  # Lift audio icon closer to progress bar
             )
-            subtitle_ui = ft.Text("Listen and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
+            #subtitle_ui = ft.Text("Listen and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
             self.trigger_audio()
         else:
             prompt_ui = ft.Text(self.target.get("eng", ""), size=28, weight=ft.FontWeight.W_500)
             # Add clear instructions for typing
-            subtitle_ui = ft.Text("Translate and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
+            #subtitle_ui = ft.Text("Translate and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
 
         # 2. Input Field
         self.input_field = ft.TextField(
@@ -182,8 +202,10 @@ class TypeGeorgian(ft.Column):
         
         # Assemble layout without transparent Dividers
         self.controls = [
+            instruction_ui,
+            ft.Container(height=5),
             prompt_ui,
-            subtitle_ui,
+            #subtitle_ui,
             self.input_field, 
             self.feedback_container,
             self.keyboard,

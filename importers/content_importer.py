@@ -1,7 +1,6 @@
 import sqlite3
 import pandas as pd
 import math
-import re  # Added regex for punctuation stripping
 
 # ======================================
 # FILE PATHS
@@ -22,14 +21,6 @@ def clean_str(val):
         return None
     s = str(val).strip()
     return s if s else None
-
-def strip_punctuation(text):
-    """Strips all punctuation from unicode text (including Georgian)."""
-    if not text:
-        return text
-    # \w matches all Unicode letters/digits (including Georgian ა-ჰ)
-    # [^\w\s] matches everything that is NOT a letter, digit, or whitespace
-    return re.sub(r'[^\w\s]', '', text).strip()
 
 def get_or_create_tag(cursor, tag_name, group_name):
     """Finds a tag by name and group. Creates it if missing."""
@@ -155,7 +146,6 @@ def main():
         line_order INTEGER,
         speaker TEXT,
         content_id INTEGER,
-        display_text TEXT, 
         audio_override_path TEXT,
         FOREIGN KEY(dialogue_id) REFERENCES dialogues(dialogue_id),
         FOREIGN KEY(content_id) REFERENCES content(content_id)
@@ -224,21 +214,11 @@ def main():
     # --- 4. IMPORT CONTENT (Pass 1: Content & Tags) ---
     print("Importing Content_Master (Pass 1)...")
     for _, row in df_content.iterrows():
-        raw_georgian = clean_str(row.get('Georgian'))
-        if not raw_georgian: 
-            continue
-
-        # Pass 1: Handle Georgian content by Type
+        georgian = clean_str(row.get('Georgian'))
+        if not georgian: continue
+        
+        # Type ID
         type_name = clean_str(row.get('Type'))
-
-        # Only strip punctuation if it's a single 'vocab' word
-        if type_name and type_name.lower() == 'vocab':
-            georgian = strip_punctuation(raw_georgian)
-        else:
-            georgian = raw_georgian  # Keeps '?' or '!' for phrases and patterns
-
-
-        # Resolve Type ID
         cursor.execute("SELECT type_id FROM types WHERE name=?", (type_name,))
         type_res = cursor.fetchone()
         type_id = type_res[0] if type_res else None
@@ -282,8 +262,8 @@ def main():
     # --- 5. IMPORT CONTENT (Pass 2: Conversational Pairs) ---
     print("Importing Conversational Pairs (Pass 2)...")
     for _, row in df_content.iterrows():
-        response_geo = strip_punctuation(clean_str(row.get('Georgian')))
-        prompt_geo = strip_punctuation(clean_str(row.get('Response_To')))
+        response_geo = clean_str(row.get('Georgian'))
+        prompt_geo = clean_str(row.get('Response_To'))
         
         if response_geo and prompt_geo:
             cursor.execute("SELECT content_id FROM content WHERE georgian=?", (response_geo,))
@@ -302,59 +282,37 @@ def main():
     print("Importing Dialogues...")
     for _, row in df_dialogues.iterrows():
         d_name = clean_str(row.get('Dialogue_Name'))
-        if not d_name: 
-            continue
+        if not d_name: continue
 
         topic_tag_id = get_or_create_tag(cursor, clean_str(row.get('Topic')), 'topic')
         desc = clean_str(row.get('Description'))
 
+        # Insert Dialogue Header
         cursor.execute("INSERT OR IGNORE INTO dialogues (internal_code, topic_tag_id, description) VALUES (?, ?, ?)", 
                        (d_name, topic_tag_id, desc))
         
         cursor.execute("SELECT dialogue_id FROM dialogues WHERE internal_code=?", (d_name,))
         d_row = cursor.fetchone()
-        if not d_row: 
-            continue
+        if not d_row: continue
         dialogue_id = d_row[0]
 
+        # Insert Line
         order = clean_str(row.get('Order'))
         speaker = clean_str(row.get('Speaker'))
-        geo_content = clean_str(row.get('Georgian_Content'))  # e.g. "დიახ!" or "როგორ ხარ?"
+        geo_content = clean_str(row.get('Georgian_Content'))
         audio_over = clean_str(row.get('Audio_Override'))
 
-        content_id = None
-        display_text = None
+        cursor.execute("SELECT content_id FROM content WHERE georgian=?", (geo_content,))
+        c_row = cursor.fetchone()
+        content_id = c_row[0] if c_row else None
 
-        if geo_content:
-            # Clean string for comparison
-            raw_geo = geo_content.strip()
+        if geo_content and not content_id:
+            print(f"  [WARNING] Dialogue line '{geo_content}' not found in Content_Master!")
 
-            # 1. Try EXACT match first (matches phrases with identical punctuation)
-            cursor.execute("SELECT content_id, georgian FROM content WHERE georgian=?", (raw_geo,))
-            c_row = cursor.fetchone()
-            
-            # 2. Fallback: Try STRIPPED match (matches vocab words like "დიახ!" -> "დიახ")
-            if not c_row:
-                clean_geo = strip_punctuation(raw_geo)
-                cursor.execute("SELECT content_id, georgian FROM content WHERE georgian=?", (clean_geo,))
-                c_row = cursor.fetchone()
-
-            if c_row:
-                content_id, base_georgian = c_row[0], c_row[1]
-                
-                # ONLY populate display_text if the dialogue string actually differs from base content
-                if raw_geo != base_georgian.strip():
-                    display_text = geo_content
-                else:
-                    display_text = None  # Explicitly set to NULL when they match
-            else:
-                print(f"  [WARNING] Dialogue line '{geo_content}' not found in Content_Master!")
-
-        # Insert line: display_text will be NULL unless punctuation was added
         cursor.execute("""
-            INSERT INTO dialogue_lines (dialogue_id, line_order, speaker, content_id, display_text, audio_override_path)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (dialogue_id, order, speaker, content_id, display_text, audio_over))
+            INSERT INTO dialogue_lines (dialogue_id, line_order, speaker, content_id, audio_override_path)
+            VALUES (?, ?, ?, ?, ?)
+        """, (dialogue_id, order, speaker, content_id, audio_over))
     conn.commit()
 
     # --- 7. IMPORT LESSONS (AUTOMATED MONOLOGUE/DIALOGUE ENGINE) ---
