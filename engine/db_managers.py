@@ -224,31 +224,76 @@ class ContentDBManager:
         return res
 
     def get_word_details(self, content_id):
-        """Fetches details for a target word along with image and audio file paths from relational media tables."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        """
+        Fetches detailed info for a single word/phrase by content_id.
+        Returns: (content_id, georgian, english, transliteration, image_path, audio_path) or None
+        """
+        conn = (
+            getattr(self, "conn", None)
+            or getattr(self, "connection", None)
+            or getattr(self, "db", None)
+            or getattr(self, "_conn", None)
+            or getattr(self, "db_conn", None)
+        )
 
-        cursor.execute("""
+        should_close = False
+        if conn is None:
+            if hasattr(self, "get_connection"):
+                conn = self.get_connection()
+            elif hasattr(self, "db_path"):
+                import sqlite3
+                conn = sqlite3.connect(self.db_path)
+                should_close = True
+            else:
+                raise AttributeError("ContentDBManager database connection attribute could not be found.")
+
+        query = """
             SELECT 
-                c.content_id, 
-                c.georgian, 
-                c.english, 
+                c.content_id,
+                c.georgian,
+                c.english,
                 c.transliteration,
-                (SELECT m.file_path 
-                 FROM media m 
-                 JOIN media_types mt ON m.media_type_id = mt.media_type_id 
-                 WHERE m.content_id = c.content_id AND LOWER(mt.name) = 'image' LIMIT 1) AS image,
-                (SELECT m.file_path 
-                 FROM media m 
-                 JOIN media_types mt ON m.media_type_id = mt.media_type_id 
-                 WHERE m.content_id = c.content_id AND LOWER(mt.name) = 'audio' LIMIT 1) AS audio
+                (
+                    SELECT m.file_path 
+                    FROM media m 
+                    JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = c.content_id 
+                    AND mt.name LIKE 'image%' 
+                    LIMIT 1
+                ) AS image_path,
+                (
+                    SELECT m.file_path 
+                    FROM media m 
+                    JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = c.content_id 
+                    AND mt.name LIKE 'audio%' 
+                    LIMIT 1
+                ) AS audio_path
             FROM content c
             WHERE c.content_id = ?
-        """, (content_id,))
+        """
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query, (content_id,))
+            return cursor.fetchone()
+        finally:
+            if should_close:
+                conn.close()
 
-        res = cursor.fetchone()
+    def get_content_audio_path(self, content_id: int) -> str:
+        """Fetches the default audio file path for a given content_id."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT m.file_path 
+            FROM media m
+            JOIN media_types mt ON m.media_type_id = mt.media_type_id
+            WHERE m.content_id = ? AND mt.name = 'audio_f_default'
+            LIMIT 1
+        """, (content_id,))
+        row = cursor.fetchone()
         conn.close()
-        return res  # Returns: (content_id, georgian, english, transliteration, image_path, audio_path)
+        return row[0] if row else None
 
     def get_convo_pair_details(self, pair_id):
         """Fetches matched conversational components with support for multiple correct responses."""
@@ -322,7 +367,7 @@ class ContentDBManager:
         return res
 
     def get_dialogue_lines(self, dialogue_id):
-        """Fetches ordered dialogue lines directly from connected content records."""
+        """Fetches ordered dialogue lines directly from connected content records including audio."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
@@ -330,7 +375,10 @@ class ContentDBManager:
                 dl.speaker,
                 c.georgian AS rendered_georgian,
                 c.transliteration,
-                c.english
+                c.english,
+                (SELECT m.file_path FROM media m 
+                JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                WHERE m.content_id = c.content_id AND mt.name LIKE 'audio%' LIMIT 1) AS audio_path
             FROM dialogue_lines dl
             JOIN content c ON dl.content_id = c.content_id
             WHERE dl.dialogue_id = ?

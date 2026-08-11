@@ -1,9 +1,11 @@
 import flet as ft
 import random
 
+from gui.audio_utils import play_audio_file
+
 class ChatBubble(ft.Container):
     """A messenger bubble with support for display_text and optional translations."""
-    def __init__(self, text: str, is_speaker_a: bool, subtext: str = None):
+    def __init__(self, text: str, is_speaker_a: bool, subtext: str = None, audio_path: str = None, page_ref: ft.Page = None):
         super().__init__()
         self.padding = ft.padding.symmetric(horizontal=15, vertical=10)
         self.border_radius = ft.border_radius.only(
@@ -19,6 +21,9 @@ class ChatBubble(ft.Container):
             
         self.content = ft.Column(controls, spacing=2, tight=True)
 
+        if audio_path:
+            self.ink = True
+            self.on_click = lambda _: play_audio_file(page_ref or self.page, audio_path)
 
 class LiveDialogueView(ft.Column):
     """Interactive chat view where user plays Speaker B with full error feedback."""
@@ -66,8 +71,8 @@ class LiveDialogueView(ft.Column):
         """Starts dialogue progression when rendered."""
         self._advance_dialogue()
 
-    def _add_bubble(self, text: str, is_speaker_a: bool, subtext: str = None):
-        bubble = ChatBubble(text=text, is_speaker_a=is_speaker_a, subtext=subtext)
+    def _add_bubble(self, text: str, is_speaker_a: bool, subtext: str = None, audio_path: str = None):
+        bubble = ChatBubble(text=text, is_speaker_a=is_speaker_a, subtext=subtext, audio_path=audio_path, page_ref=self.page)
         avatar = ft.CircleAvatar(
             content=ft.Text("A" if is_speaker_a else "B", weight=ft.FontWeight.BOLD), 
             radius=16, 
@@ -80,6 +85,9 @@ class LiveDialogueView(ft.Column):
         self.chat_column.controls.append(row)
         self.chat_column.update() 
         self.chat_column.scroll_to(offset=-1, duration=300)
+
+        if audio_path:
+            play_audio_file(self.page, audio_path)
 
     def _advance_dialogue(self):
         # 1. End of dialogue check
@@ -98,10 +106,10 @@ class LiveDialogueView(ft.Column):
         
         if step["type"] == "prompt":
             # Speaker A talks automatically
-            self._add_bubble(step["text"], is_speaker_a=True)
+            self._add_bubble(step["text"], is_speaker_a=True, audio_path=step.get("audio"))
             self.current_step_idx += 1
-            self._advance_dialogue()  # Advance to next step (e.g. User's turn)
-            
+            self._advance_dialogue()
+
         elif step["type"] == "choice":
             # Speaker B turn (User responds)
             self.options_container.controls.clear()
@@ -176,7 +184,8 @@ class LiveDialogueView(ft.Column):
             height=45,
             bgcolor=ft.Colors.BLUE_600,
             color=ft.Colors.WHITE,
-            on_click=lambda e: self._next_step_after_choice(correct_opt["geo"]) 
+            # Pass audio path of the correct line here
+            on_click=lambda e: self._next_step_after_choice(correct_opt["geo"], correct_opt.get("audio")) 
         )
 
         self.options_container.controls.append(ft.Container(height=8))
@@ -188,9 +197,9 @@ class LiveDialogueView(ft.Column):
         # Auto-scroll main window down so the Continue button is immediately visible
         self.scroll_to(offset=-1, duration=300)
 
-    def _next_step_after_choice(self, correct_text):
+    def _next_step_after_choice(self, correct_text, audio_path=None):
         # Inject Speaker B's line into the chat log permanently
-        self._add_bubble(correct_text, is_speaker_a=False)
+        self._add_bubble(correct_text, is_speaker_a=False, audio_path=audio_path)
         
         # Advance the state machine
         self.current_step_idx += 1
@@ -212,11 +221,12 @@ class DialoguePassiveView(ft.Column):
             rendered_geo = line[1]
             trans = line[2] if len(line) > 2 else ""
             eng = line[3] if len(line) > 3 else ""
+            audio = line[4] if len(line) > 4 else None
             
             is_speaker_a = (speaker == "A")
             subtext = f"{trans} — '{eng}'" if trans or eng else None
             
-            bubble = ChatBubble(text=rendered_geo, is_speaker_a=is_speaker_a, subtext=subtext)
+            bubble = ChatBubble(text=rendered_geo, is_speaker_a=is_speaker_a, subtext=subtext, audio_path=audio)
             avatar = ft.CircleAvatar(
                 content=ft.Text(speaker, weight=ft.FontWeight.BOLD), 
                 radius=16, 

@@ -207,6 +207,9 @@ class ReviewSession:
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+
+        from engine.db_managers import ContentDBManager
+        db_mgr = ContentDBManager(self.db_path)
         
         placeholders = ",".join(["?"] * len(target_ids))
         cursor.execute(f"""
@@ -222,8 +225,17 @@ class ReviewSession:
         for c_id, eng, geo, trans in vocab_rows:
             # Apply the fading filter logic directly here
             display_trans = trans if not self._should_fade_transliteration(c_id) else None
-            
-            word_data = {"id": c_id, "eng": eng, "geo": geo, "trans": display_trans}
+
+            # Fetch audio path from media table
+            audio_file = db_mgr.get_content_audio_path(c_id)
+
+            word_data = {
+                "id": c_id, 
+                "eng": eng, 
+                "geo": geo, 
+                "trans": display_trans,
+                "audio": audio_file  # e.g., 'audio/gamarjoba.m4a'
+            }
             distractors = self._get_distractors(c_id, limit=2)
             
             # Tier 1 Card: Receptive Multiple Choice (Shuffled types)

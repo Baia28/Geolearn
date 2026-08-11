@@ -1,6 +1,7 @@
 import flet as ft
 import random
 from gui.keyboard import GeorgianKeyboard
+from gui.audio_utils import play_audio_file
 
 class MatchMatrix3x3(ft.Container):
     def __init__(self, targets: list, on_submit: callable):
@@ -135,6 +136,11 @@ class TypeGeorgian(ft.Column):
         
         self._build_ui()
 
+    def did_mount(self):
+        # Auto-play audio upon loading in dictation mode once page context is ready
+        if self.mode == "audio_dictation":
+            self.trigger_audio()
+
     def _build_ui(self):
         # Dynamic Instruction Banner 
         task_icon = ft.Icons.HEADSET if self.mode == "audio_dictation" else ft.Icons.KEYBOARD
@@ -163,7 +169,7 @@ class TypeGeorgian(ft.Column):
                 margin=ft.margin.only(top=-5)  # Lift audio icon closer to progress bar
             )
             #subtitle_ui = ft.Text("Listen and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
-            self.trigger_audio()
+            #self.trigger_audio()
         else:
             prompt_ui = ft.Text(self.target.get("eng", ""), size=28, weight=ft.FontWeight.W_500)
             # Add clear instructions for typing
@@ -228,6 +234,8 @@ class TypeGeorgian(ft.Column):
             self.input_field.update()
 
     def trigger_audio(self):
+        audio_path = self.target.get("audio") or self.target.get("audio_path")
+        play_audio_file(self.page, audio_path)
         print(f"🔊 Playing audio for: {self.target.get('geo', 'Unknown')}")
 
     def _validate(self, e):

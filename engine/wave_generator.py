@@ -87,6 +87,10 @@ class WaveGenerator:
             image_src = word_row[4] if len(word_row) > 4 else None
             audio_src = word_row[5] if len(word_row) > 5 else None
 
+            # Fallback check if audio_src is not provided in word_row
+            if not audio_src and hasattr(self.content_db, "get_content_audio_path"):
+                audio_src = self.content_db.get_content_audio_path(c_id)
+
             display_trans = trans if not self.progress_db.should_fade_transliteration(c_id) else None
 
             word_data = {
@@ -295,7 +299,8 @@ class WaveGenerator:
                 
                 for line in lines:
                     # Tuple from get_dialogue_lines: (speaker, rendered_georgian, transliteration, english)
-                    speaker, geo, trans, eng = line
+                    speaker, geo, trans, eng = line[:4]
+                    audio_path = line[4] if len(line) > 4 else None
                     
                     if speaker.upper() == "A":
                         # Speaker A is ALWAYS an automated prompt
@@ -304,7 +309,8 @@ class WaveGenerator:
                             "speaker": "A", 
                             "text": geo,
                             "transliteration": trans,
-                            "english": eng
+                            "english": eng,
+                            "audio": audio_path
                         })
                     else:
                         # Speaker B is ALWAYS the user's turn
@@ -327,7 +333,8 @@ class WaveGenerator:
                             "correct": {
                                 "geo": geo,
                                 "eng": eng,
-                                "trans": trans
+                                "trans": trans,
+                                "audio": audio_path
                             },
                             "distractors": distractor_objs
                         })
@@ -362,13 +369,28 @@ class WaveGenerator:
                 rev_id = urgent_ids.pop(0)
                 word_details = self.content_db.get_word_details(rev_id)
                 if word_details:
-                    # SAFE UNPACKING: Grab first 4 items regardless of tuple length
-                    _, geo, eng, trans = word_details[:4]
+                    c_id = word_details[0]
+                    geo = word_details[1]
+                    eng = word_details[2]
+                    trans = word_details[3] if len(word_details) > 3 else ""
+                    image_src = word_details[4] if len(word_details) > 4 else None
+                    audio_src = word_details[5] if len(word_details) > 5 else None
+
+                    if not audio_src and hasattr(self.content_db, "get_content_audio_path"):
+                        audio_src = self.content_db.get_content_audio_path(rev_id)
+
                     final_stream.append({
                         "content_id": rev_id,
                         "activity": "type_georgian",
                         "is_review_item": True,
-                        "target": {"id": rev_id, "eng": eng, "geo": geo, "trans": trans}
+                        "target": {
+                            "id": rev_id, 
+                            "eng": eng, 
+                            "geo": geo, 
+                            "trans": trans,
+                            "image": image_src,
+                            "audio": audio_src
+                        }
                     })
                 active_step_counter = 0
 
@@ -376,13 +398,28 @@ class WaveGenerator:
             rev_id = urgent_ids.pop(0)
             word_details = self.content_db.get_word_details(rev_id)
             if word_details:
-                # SAFE UNPACKING: Grab first 4 items regardless of tuple length
-                _, geo, eng, trans = word_details[:4]
+                c_id = word_details[0]
+                geo = word_details[1]
+                eng = word_details[2]
+                trans = word_details[3] if len(word_details) > 3 else ""
+                image_src = word_details[4] if len(word_details) > 4 else None
+                audio_src = word_details[5] if len(word_details) > 5 else None
+
+                if not audio_src and hasattr(self.content_db, "get_content_audio_path"):
+                    audio_src = self.content_db.get_content_audio_path(rev_id)
+
                 final_stream.append({
                     "content_id": rev_id,
                     "activity": "type_georgian",
                     "is_review_item": True,
-                    "target": {"id": rev_id, "eng": eng, "geo": geo, "trans": trans}
+                    "target": {
+                        "id": rev_id, 
+                        "eng": eng, 
+                        "geo": geo, 
+                        "trans": trans,
+                        "image": image_src,
+                        "audio": audio_src
+                    }
                 })
 
         return final_stream

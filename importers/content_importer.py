@@ -1,6 +1,7 @@
 import sqlite3
 import pandas as pd
 import math
+import os
 
 # ======================================
 # FILE PATHS
@@ -46,6 +47,27 @@ def get_or_create_tag(cursor, tag_name, group_name):
     # Create tag
     cursor.execute("INSERT INTO tags (name, group_id) VALUES (?, ?)", (tag_name, group_id))
     return cursor.lastrowid
+
+def normalize_asset_path(raw_path: str, default_folder: str) -> str:
+    """
+    Cleans raw paths from Excel sheets.
+    Converts full paths like '/home/baia/.../assets/audio/gamarjoba.m4a'
+    or simple filenames like 'gamarjoba.m4a' into standard relative paths: 'audio/gamarjoba.m4a'
+    """
+    if not raw_path or str(raw_path).strip() in ["", "nan", "None", "None.png"]:
+        return None
+
+    cleaned = str(raw_path).strip().replace("\\", "/")
+
+    # Extract relative path if 'assets/' is present
+    if "assets/" in cleaned:
+        cleaned = cleaned.split("assets/")[-1]
+
+    # If the user only provided a filename (e.g., 'gamarjoba.m4a'), prepend default folder
+    if not "/" in cleaned:
+        cleaned = f"{default_folder}/{cleaned}"
+
+    return cleaned
 
 # =========================================
 # MAIN EXECUTION
@@ -192,7 +214,7 @@ def main():
 
     # --- 2. PRE-POPULATE STATIC TABLES ---
     cursor.executescript("""
-    INSERT INTO types (name) VALUES ('vocab'), ('pattern'), ('phrase');
+    INSERT INTO types (name) VALUES ('vocab'), ('pattern'), ('phrase'), ('letter');
     INSERT INTO tag_groups (name) VALUES ('topic'), ('semantic_group'), ('grammar'), ('frequency'), ('level');
     INSERT INTO media_types (name) VALUES ('image'), ('audio_f_default'), ('audio_f_slow'), ('audio_m_default'), ('audio_m_slow');
     INSERT INTO lesson_component_types (name) VALUES ('monologue'), ('dialogue');
@@ -253,10 +275,33 @@ def main():
                     cursor.execute("INSERT OR IGNORE INTO content_tags (content_id, tag_id) VALUES (?, ?)", (content_id, tag_id))
 
         # Handle Media
-        img_path = clean_str(row.get('Image'))
-        if img_path:
-            cursor.execute("INSERT INTO media (content_id, media_type_id, file_path) VALUES (?, (SELECT media_type_id FROM media_types WHERE name='image'), ?)", (content_id, img_path))
-            
+        # 1. Handle Image Media
+        img_raw = clean_str(row.get('Image'))
+        clean_img_path = normalize_asset_path(img_raw, default_folder="images")
+
+        if clean_img_path:
+            cursor.execute("""
+                INSERT INTO media (content_id, media_type_id, file_path)
+                VALUES (
+                    ?, 
+                    (SELECT media_type_id FROM media_types WHERE name = 'image'), 
+                    ?
+                )
+            """, (content_id, clean_img_path))
+
+        # 2. Handle Audio Media
+        audio_raw = clean_str(row.get('Audio'))
+        clean_audio_path = normalize_asset_path(audio_raw, default_folder="audio")
+
+        if clean_audio_path:
+            cursor.execute("""
+                INSERT INTO media (content_id, media_type_id, file_path)
+                VALUES (
+                    ?, 
+                    (SELECT media_type_id FROM media_types WHERE name = 'audio_f_default'), 
+                    ?
+                )
+            """, (content_id, clean_audio_path))
     conn.commit()
 
     # --- 5. IMPORT CONTENT (Pass 2: Conversational Pairs) ---

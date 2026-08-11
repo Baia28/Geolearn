@@ -64,7 +64,7 @@ def main(page: ft.Page):
         # Get phase name fallback
         phases_summary = content_db.get_phases_summary(completed_ids)
         phase_title = next((p["title"] for p in phases_summary if p["phase_num"] == phase_num), f"Phase {phase_num}")
-        
+
         units_view = UnitsView(
             phase_num=phase_num,
             phase_title=phase_title,
@@ -148,4 +148,4 @@ def main(page: ft.Page):
     show_home()
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(target=main, assets_dir="assets")

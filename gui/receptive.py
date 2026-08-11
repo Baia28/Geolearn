@@ -1,6 +1,8 @@
 import flet as ft
 import random
 
+from gui.audio_utils import play_audio_file
+
 class MultipleChoiceCard(ft.Container):
     def __init__(self, mode: str, target_data: dict, distractors: list, on_submit: callable):
         super().__init__()
@@ -15,17 +17,25 @@ class MultipleChoiceCard(ft.Container):
         
         self._build_ui()
 
+    def did_mount(self):
+        # Auto-play audio when card mounts if it's an audio mode
+        if "audio_mc" in self.mode:
+            self.trigger_audio()
+
     def _build_ui(self):
         prompt_ui = None
         subtitle_ui = ft.Container()
         correct_ans = "Missing Answer"
 
-        # --- NEW: Dynamic Instruction Banner Logic ---
-        task_instruction = "Select the correct answer"
+        # --- Dynamic Instruction Banner Logic ---
+        #task_instruction = "Select the correct answer"
         task_icon = ft.Icons.TOUCH_APP
 
-        if "audio_mc" in self.mode:
-            task_instruction = "Listen and select the correct meaning"
+        if self.mode == "audio_mc_to_eng":
+            task_instruction = "Listen and select the correct English meaning"
+            task_icon = ft.Icons.HEADPHONES
+        elif self.mode == "audio_mc_to_geo":
+            task_instruction = "Listen and select the spoken Georgian word"
             task_icon = ft.Icons.HEADPHONES
         elif self.mode == "mc_geo_to_eng":
             task_instruction = "Translate to English"
@@ -56,7 +66,7 @@ class MultipleChoiceCard(ft.Container):
         # 1. AUDIO MODES: Massive Audio Button + Guidance Subtitle
         # -------------------------------------------------------------
         if "audio_mc" in self.mode:
-            audio_text = self.target.get("geo", "")
+            #audio_text = self.target.get("geo", "")
             correct_ans = self.target.get("eng") if self.mode == "audio_mc_to_eng" else self.target.get("geo")
             trans_text = self.target.get("trans", "")
 
@@ -67,13 +77,13 @@ class MultipleChoiceCard(ft.Container):
                 border_radius=55,
                 alignment=ft.alignment.center, 
                 ink=True,
-                on_click=lambda e: self.trigger_audio(audio_text),
+                on_click=lambda e: self.trigger_audio(),
                 content=ft.Icon(ft.Icons.VOLUME_UP_ROUNDED, size=48, color=ft.Colors.BLUE_700)
             )
             # Subtitle with optional Transliteration
-            subtitle_controls = [
-                ft.Text("Listen and select the correct answer", size=13, color=ft.Colors.GREY_500, italic=True)
-            ]
+            #subtitle_controls = [
+            #    ft.Text("Listen and select the correct answer", size=13, color=ft.Colors.GREY_500, italic=True)
+            #]
             #
             #
             ########################################
@@ -92,7 +102,7 @@ class MultipleChoiceCard(ft.Container):
             )
             
             # Auto-play on entry
-            self.trigger_audio(audio_text)
+            #self.trigger_audio(audio_text)
 
         # -------------------------------------------------------------
         # 2. GEORGIAN PROMPTS: Text + Small Audio Icon + Transliteration
@@ -108,7 +118,7 @@ class MultipleChoiceCard(ft.Container):
                 geo_text = self.target.get("prompt_geo") or self.target.get("prompt", "")
                 correct_ans = self.target.get("correct_geo") or self.target.get("correct", "")
                 trans_text = self.target.get("prompt_trans") or self.target.get("trans", "")
-                instruction_text = "Select the best response:"  # 💡 Clear task prompt for user!
+                #instruction_text = "Select the best response:"  # 💡 Clear task prompt for user!
             elif self.mode == "dialogue_context_mc":
                 geo_text = self.target.get("quote_geo", "")
                 correct_ans = self.target.get("correct_eng", "")
@@ -124,7 +134,7 @@ class MultipleChoiceCard(ft.Container):
                 ft.IconButton(
                     icon=ft.Icons.VOLUME_UP,
                     icon_color=ft.Colors.BLUE_600,
-                    on_click=lambda e, txt=geo_text: self.trigger_audio(txt),
+                    on_click=lambda e: self.trigger_audio(),
                     tooltip="Listen"
                 )
             ], alignment=ft.MainAxisAlignment.CENTER, wrap=True)
@@ -246,18 +256,19 @@ class MultipleChoiceCard(ft.Container):
         )
 
     def trigger_audio(self, text: str = None):
-        # Checks if target dict contains an explicit audio file path/URL
-        audio_file = self.target.get("audio", None)
-        audio_target = text or self.target.get("geo") or self.target.get("prompt_geo", "Unknown")
-        
-        print(f"🔊 Playing audio for: {audio_target}")
-        
-        if audio_file and self.page:
-            # Play actual audio file using Flet's Audio control
-            audio_player = ft.Audio(src=audio_file, autoplay=True)
-            self.page.overlay.append(audio_player)
-            self.page.update()
+        audio_path = (
+            self.target.get("audio") or 
+            self.target.get("audio_path") or 
+            self.target.get("audio_file") or 
+            self.target.get("file")
+        )
 
+        if audio_path and self.page:
+            play_audio_file(self.page, audio_path)
+        else:
+            print(f"⚠️ Audio skipped: missing path or page context for Word ID {self.target.get('id')}")
+
+    
     def _handle_click(self, selected, correct):
         is_correct = (selected == correct)
         
