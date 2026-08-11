@@ -125,7 +125,7 @@ class LessonsView(ft.Column):
                     content=ft.Column(
                         controls=[
                             ft.Row([ft.Icon(ft.Icons.REPLAY, color=ft.Colors.AMBER_700), ft.Text("Unit Review", weight=ft.FontWeight.BOLD)]),
-                            ft.Text("Review at least 15 vocabulary items from this unit.", size=11, color=ft.Colors.GREY_600)
+                            ft.Text("Review at least 12 vocabulary items from this unit.", size=11, color=ft.Colors.GREY_600)
                         ],
                         spacing=5
                     )

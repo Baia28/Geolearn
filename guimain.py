@@ -4,6 +4,10 @@ import os
 # Import Database Managers
 from engine.db_managers import ContentDBManager, ProgressDBManager
 
+# Import Engine Runners
+from engine.review_engine import ReviewSession
+from engine.lesson_engine import LessonSession
+
 # Import GUI Views
 from gui.home_view import HomeView
 from gui.units_view import UnitsView
@@ -11,8 +15,6 @@ from gui.lessons_view import LessonsView
 from gui.session_view import SessionView
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# If your .db files are in the ROOT project folder:
 CONTENT_DB_PATH = os.path.join(BASE_DIR, "database", "content_poolbook.db")
 PROGRESS_DB_PATH = os.path.join(BASE_DIR, "database", "user_progress.db")
 
@@ -62,7 +64,7 @@ def main(page: ft.Page):
         # Get phase name fallback
         phases_summary = content_db.get_phases_summary(completed_ids)
         phase_title = next((p["title"] for p in phases_summary if p["phase_num"] == phase_num), f"Phase {phase_num}")
-
+        
         units_view = UnitsView(
             phase_num=phase_num,
             phase_title=phase_title,
@@ -102,18 +104,25 @@ def main(page: ft.Page):
     def show_session(phase=None, unit=None, lesson=None):
         """Launches the interactive flashcard / study session runner."""
 
-        # Define dynamic return route
+        # 1. Determine Engine
+        if lesson is None:
+            # Unit SRS Review (if phase & unit given) or Global Quick Review (if phase & unit are None)
+            active_engine = ReviewSession(phase_num=phase, unit_num=unit, max_items=10)
+        else:
+            # Standard Lesson Session
+            active_engine = LessonSession(phase_num=phase, unit_num=unit, lesson_num=lesson)
+
+        # 2. Define Return Route
         def handle_return():
             if phase is not None and unit is not None:
                 show_lessons(phase, unit)
             else:
                 show_home()
-                
+
+        # 3. Instantiate SessionView with active_engine      
         session_view = SessionView(
             page=page, 
-            phase=phase, 
-            unit=unit, 
-            lesson=lesson,
+            engine=active_engine,
             on_return=handle_return
         )
         

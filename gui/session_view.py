@@ -1,6 +1,6 @@
 import flet as ft
-import time
 from engine.lesson_engine import LessonSession
+from engine.review_engine import ReviewSession
 
 # Import our custom UI components from the gui/ folder
 from gui.receptive import MultipleChoiceCard
@@ -8,24 +8,30 @@ from gui.production import TypeGeorgian, MatchMatrix3x3
 from gui.dialogues import DialoguePassiveView, LiveDialogueView
 
 class SessionView(ft.Column):
-    def __init__(self, page: ft.Page, phase=None, unit=None, lesson=None, on_return=None):
+    def __init__(self, page: ft.Page, engine=None, phase=None, unit=None, lesson=None, on_return=None):
         super().__init__()
         self.page = page
-        self.on_return = on_return # <-- Store it
+        self.on_return = on_return
+
+        if engine is not None:
+            self.engine = engine
+        elif lesson is not None:
+            self.engine = LessonSession(phase_num=phase, unit_num=unit, lesson_num=lesson)
+        else:
+            self.engine = ReviewSession(phase_num=phase, unit_num=unit)
+
         self.alignment = ft.MainAxisAlignment.CENTER
         self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
         self.expand = True
-        self.scroll = ft.ScrollMode.AUTO  
+        self.scroll = ft.ScrollMode.AUTO
         
         # Initialize the Core Engine
-        self.engine = LessonSession(phase_num=phase, unit_num=unit, lesson_num=lesson)
         
         # Setup Static UI Elements
         self.progress_bar = ft.ProgressBar(width=400, value=0.0, color=ft.Colors.GREEN_600, bgcolor=ft.Colors.GREY_200)
         self.status_text = ft.Text("", size=18, weight=ft.FontWeight.BOLD)
         # says correct or incorrect
         
-        # This container is our "stage"
         # This container is our "stage"
         self.card_stage = ft.Container(expand=True, alignment=ft.alignment.center)
         
@@ -68,28 +74,52 @@ class SessionView(ft.Column):
             self._show_completion_screen()
             return
 
-        activity = card_data.get("activity")
+        activity = card_data.get("activity", "")
 
         try:
-            # 1. Receptive Multiple Choice Cards
-            if "mc" in activity:
+            # 1. Route: Multiple Choice
+            if activity in ["mc_geo_to_eng", "mc_eng_to_geo", "mc_geo_pair_geo", "audio_mc_to_eng", "audio_mc_to_geo"]:
                 self.card_stage.content = MultipleChoiceCard(
                     mode=activity,
                     target_data=card_data.get("target"),
-                    distractors=card_data.get("distractors"),
+                    distractors=card_data.get("distractors", []),
                     on_submit=self._handle_submission
                 )
-            # 2. Production Typing / Dictation
+
+            # 2. Route: Match Matrix
+            elif activity == "match_matrix_3x3":
+                self.card_stage.content = MatchMatrix3x3(
+                    targets=card_data.get("targets", []),
+                    on_submit=self._handle_submission
+                )
+
+            # 3. Route: Type Georgian & Audio Dictation
             elif activity in ["type_georgian", "audio_dictation"]:
                 self.card_stage.content = TypeGeorgian(
                     mode=activity,
                     target_data=card_data.get("target"),
                     on_submit=self._handle_submission
                 )
-            # ... (other routes here)
+
+            # 4. Route: Passive Dialogue
+            elif activity == "dialogue_passive":
+                self.card_stage.content = DialoguePassiveView(
+                    dialogue_lines=card_data.get("target", {}).get("lines", []), 
+                    on_continue=lambda complete: self._handle_submission(True)
+                )
+
+            # 5. Route: Live Interactive Dialogue (Roleplay)
+            elif activity in ["dialogue_roleplay_mc", "dialogue_activity", "dialogue_interactive"]:
+                self.card_stage.content = LiveDialogueView(
+                    steps=card_data.get("target", {}).get("steps", []),
+                    on_submit=lambda complete: self._handle_submission(True)
+                )
+
+            # 6. Fallback Route
+            else:
+                self.card_stage.content = ft.Text(f"Unsupported Activity: {activity}", color=ft.Colors.RED)
 
         except Exception as err:
-            # Catch any rendering error and print it to screen!
             print(f"❌ Error loading card ({activity}): {err}")
             import traceback
             traceback.print_exc()
@@ -98,49 +128,6 @@ class SessionView(ft.Column):
                 color=ft.Colors.RED_600, 
                 size=16
             )
-            
-
-        # 1. Route: Multiple Choice
-        if activity in ["mc_geo_to_eng", "mc_eng_to_geo", "mc_geo_pair_geo", "audio_mc_to_eng", "audio_mc_to_geo"]:
-            self.card_stage.content = MultipleChoiceCard(
-                mode=activity,
-                target_data=card_data.get("target"),
-                distractors=card_data.get("distractors", []),
-                on_submit=self._handle_submission
-            )
-            
-        # 2. Route: Match Matrix
-        elif activity == "match_matrix_3x3":
-            self.card_stage.content = MatchMatrix3x3(
-                targets=card_data.get("targets", []), # Uses 'targets' array from wave_generator
-                on_submit=self._handle_submission
-            )
-            
-        # 3. Route: Type Georgian & Audio Dictation
-        elif activity in ["type_georgian", "audio_dictation"]:
-            self.card_stage.content = TypeGeorgian(
-                mode=activity,
-                target_data=card_data.get("target"),
-                on_submit=self._handle_submission
-            )
-            
-        # 4. Route: Passive Dialogue
-        elif activity == "dialogue_passive":
-            self.card_stage.content = DialoguePassiveView(
-                dialogue_lines=card_data.get("target", {}).get("lines", []), 
-                on_continue=lambda complete: self._handle_submission(True)
-            )
-            
-        # 5. Route: Live Interactive Dialogue (Roleplay)
-        elif activity in ["dialogue_roleplay_mc", "dialogue_activity", "dialogue_interactive"]:
-            self.card_stage.content = LiveDialogueView(
-                steps=card_data.get("target", {}).get("steps", []),
-                on_submit=lambda complete: self._handle_submission(True)
-            )
-            
-        # 6. Fallback Route
-        else:
-            self.card_stage.content = ft.Text(f"Unsupported Activity: {activity}", color=ft.Colors.RED)
 
         self.update()
 

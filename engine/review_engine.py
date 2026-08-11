@@ -9,18 +9,52 @@ import datetime
 import time
 
 class ReviewSession:
-    def __init__(self, db_name="content_poolbook.db", max_items=12):
+    def __init__(self, db_name="content_poolbook.db", phase_num=None, unit_num=None, max_items=12):
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.db_path = os.path.join(self.project_root, "database", db_name)
         self.progress_db_path = os.path.join(self.project_root, "database", "user_progress.db")
-        
+
+        self.phase_num = phase_num
+        self.unit_num = unit_num
         self.max_items = max_items
         self.queue = []
         self.total_exercises = 0
         self.completed_count = 0
         
-        # Build the session immediately upon instantiation
+        self._ensure_progress_schema()
         self._build_review_session()
+
+    def _ensure_progress_schema(self):
+        """Ensures research_activity_log table and required columns exist."""
+        try:
+            conn = sqlite3.connect(self.progress_db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_activity_log (
+                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    phase_num INTEGER,
+                    unit_num INTEGER,
+                    lesson_num INTEGER,
+                    activity_type TEXT,
+                    content_id INTEGER,
+                    is_correct INTEGER,
+                    is_review_item INTEGER,
+                    response_latency_ms INTEGER,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("PRAGMA table_info(research_activity_log)")
+            existing_cols = [row[1] for row in cursor.fetchall()]
+            
+            if "activity_type" not in existing_cols:
+                cursor.execute("ALTER TABLE research_activity_log ADD COLUMN activity_type TEXT")
+            if "response_latency_ms" not in existing_cols:
+                cursor.execute("ALTER TABLE research_activity_log ADD COLUMN response_latency_ms INTEGER")
+                
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ Progress DB Schema migration warning: {e}")
 
     def _should_fade_transliteration(self, content_id, mastery_threshold=3):
         """Checks user_progress.db to see if the user has mastered a word enough to hide helpers."""
@@ -44,36 +78,109 @@ class ReviewSession:
         return min(self.completed_count / self.total_exercises, 1.0)
 
     def _get_review_content_ids(self, limit):
-        """Fetches overdue items, or backfills with lowest mastery items if review queue is dry."""
-        conn = sqlite3.connect(self.progress_db_path)
-        cursor = conn.cursor()
+        """Fetches review items using clean two-step queries to avoid SQLite attach locks."""
+        unit_content_ids = None
+
+        # 1. Fetch content IDs for unit review from content_poolbook.db
+        if self.phase_num is not None and self.unit_num is not None:
+            try:
+                conn_content = sqlite3.connect(self.db_path)
+                cursor_content = conn_content.cursor()
+
+                # Dynamic column check on units and lessons tables
+                cursor_content.execute("PRAGMA table_info(units)")
+                unit_cols = [row[1] for row in cursor_content.fetchall()]
+                cursor_content.execute("PRAGMA table_info(lessons)")
+                lesson_cols = [row[1] for row in cursor_content.fetchall()]
+
+                unit_col = "unit_num" if "unit_num" in unit_cols else ("unit_id" if "unit_id" in unit_cols else None)
+                phase_col = "phase_num" if "phase_num" in unit_cols else ("phase_id" if "phase_id" in unit_cols else None)
+
+                if unit_col and phase_col:
+                    cursor_content.execute(f"""
+                        SELECT DISTINCT lc.associated_id 
+                        FROM lesson_contents lc
+                        JOIN lessons l ON lc.lesson_id = l.lesson_id
+                        JOIN units u ON l.unit_id = u.unit_id
+                        WHERE u.{unit_col} = ? AND u.{phase_col} = ?
+                    """, (self.unit_num, self.phase_num))
+                elif "unit_num" in lesson_cols and "phase_num" in lesson_cols:
+                    cursor_content.execute("""
+                        SELECT DISTINCT lc.associated_id 
+                        FROM lesson_contents lc
+                        JOIN lessons l ON lc.lesson_id = l.lesson_id
+                        WHERE l.unit_num = ? AND l.phase_num = ?
+                    """, (self.unit_num, self.phase_num))
+                else:
+                    cursor_content.execute("""
+                        SELECT DISTINCT lc.associated_id 
+                        FROM lesson_contents lc
+                        JOIN lessons l ON lc.lesson_id = l.lesson_id
+                        WHERE l.unit_id = ?
+                    """, (self.unit_num,))
+
+                unit_content_ids = [row[0] for row in cursor_content.fetchall() if row[0] is not None]
+                conn_content.close()
+            except Exception as e:
+                print(f"⚠️ Error fetching unit content IDs: {e}")
+                unit_content_ids = []
+
+            if not unit_content_ids:
+                return []
+
+        # 2. Query user_progress.db for SRS priorities
+        conn_prog = sqlite3.connect(self.progress_db_path)
+        cursor_prog = conn_prog.cursor()
         today_str = datetime.date.today().isoformat()
         
-        # Priority 1: Get items actually due for review
-        cursor.execute("""
-            SELECT content_id FROM srs_registry 
-            WHERE next_review_date <= ? 
-            ORDER BY ease_factor ASC, mastery_level ASC 
-            LIMIT ?
-        """, (today_str, limit))
-        review_ids = [row[0] for row in cursor.fetchall()]
-        
-        # Priority 2: Backfill with weakest items if user just wants extra optional practice
-        if len(review_ids) < limit:
-            needed = limit - len(review_ids)
-            placeholders = ",".join(["?"] * len(review_ids)) if review_ids else "0"
-            query = f"""
-                SELECT content_id FROM srs_registry
-                WHERE content_id NOT IN ({placeholders})
-                ORDER BY mastery_level ASC, repetitions ASC
-                LIMIT ?
-            """
-            params = review_ids + [needed] if review_ids else [needed]
-            cursor.execute(query, params)
-            backfill_ids = [row[0] for row in cursor.fetchall()]
-            review_ids.extend(backfill_ids)
-            
-        conn.close()
+        review_ids = []
+        try:
+            if unit_content_ids is not None:
+                placeholders = ",".join(["?"] * len(unit_content_ids))
+                cursor_prog.execute(f"""
+                    SELECT content_id FROM srs_registry 
+                    WHERE content_id IN ({placeholders})
+                    ORDER BY next_review_date ASC, ease_factor ASC
+                    LIMIT ?
+                """, unit_content_ids + [limit])
+                review_ids = [row[0] for row in cursor_prog.fetchall()]
+
+                # Backfill with remaining unit words if SRS queue has fewer than limit
+                if len(review_ids) < limit:
+                    needed = limit - len(review_ids)
+                    remaining = [cid for cid in unit_content_ids if cid not in review_ids]
+                    random.shuffle(remaining)
+                    review_ids.extend(remaining[:needed])
+            else:
+                # Global Quick Review
+                cursor_prog.execute("""
+                    SELECT content_id FROM srs_registry 
+                    WHERE next_review_date <= ? 
+                    ORDER BY ease_factor ASC, mastery_level ASC 
+                    LIMIT ?
+                """, (today_str, limit))
+                review_ids = [row[0] for row in cursor_prog.fetchall()]
+                
+                if len(review_ids) < limit:
+                    needed = limit - len(review_ids)
+                    placeholders = ",".join(["?"] * len(review_ids)) if review_ids else "0"
+                    query = f"""
+                        SELECT content_id FROM srs_registry
+                        WHERE content_id NOT IN ({placeholders})
+                        ORDER BY mastery_level ASC, repetitions ASC
+                        LIMIT ?
+                    """
+                    params = review_ids + [needed] if review_ids else [needed]
+                    cursor_prog.execute(query, params)
+                    review_ids.extend([row[0] for row in cursor_prog.fetchall()])
+        except Exception as e:
+            print(f"⚠️ Error querying SRS registry: {e}")
+            if unit_content_ids:
+                random.shuffle(unit_content_ids)
+                review_ids = unit_content_ids[:limit]
+        finally:
+            conn_prog.close()
+
         return review_ids
 
     def _get_distractors(self, correct_content_id, limit=2):
@@ -153,7 +260,7 @@ class ReviewSession:
         self.card_start_time = time.perf_counter()
         return self.queue[0]
 
-    def submit_answer(self, is_correct):
+    def submit_answer(self, is_correct, user_input=None):
         """Updates internal scoring matrix counters and re-queues failed elements 3 slots down."""
         elapsed_time = time.perf_counter() - getattr(self, "card_start_time", time.perf_counter())
         latency_ms = int(elapsed_time * 1000)
