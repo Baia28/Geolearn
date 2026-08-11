@@ -26,23 +26,23 @@ class HomeView(ft.Column):
             controls=[
                 ft.Row(
                     controls=[
-                        ft.Icon(ft.Icons.LANGUAGE, size=40, color=ft.Colors.BLUE_600),
+                        ft.Text("🇬🇪", size=36),
                         ft.Text("GeoLearn", size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
                     ],
                     alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=10
+                    spacing=12
                 ),
                 ft.Text("Master the Georgian Language Step-by-Step", size=14, color=ft.Colors.GREY_600),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=2
+            spacing=4
         )
 
         # 2. LEFT SIDEBAR / MAIN CURRICULUM COLUMN
         curriculum_controls = [
             ft.Text("CURRICULUM", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_600),
             
-            # --- Phase 0: Georgian Alphabet ---
+            # --- CLEAN ALPHABET BUTTON (Sits directly above Phase 1) ---
             ft.Card(
                 content=ft.Container(
                     padding=15,
@@ -50,23 +50,25 @@ class HomeView(ft.Column):
                     content=ft.Row(
                         controls=[
                             ft.Container(
-                                content=ft.Text("ა", size=26, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                                bgcolor=ft.Colors.INDIGO_500,
+                                content=ft.Icon(ft.Icons.SORT_BY_ALPHA_ROUNDED, size=26, color=ft.Colors.WHITE),
+                                bgcolor=ft.Colors.BLUE_600,
                                 width=48, height=48,
-                                border_radius=8,
+                                border_radius=10,
                                 alignment=ft.alignment.center
                             ),
+                            ft.Container(width=6),
                             ft.Column(
                                 controls=[
-                                    ft.Text("Phase 0: Georgian Alphabet", size=16, weight=ft.FontWeight.BOLD),
-                                    ft.Text("Learn Mkhedruli script, sounds & writing", size=12, color=ft.Colors.GREY_600),
+                                    ft.Text("Georgian Alphabet (ანბანი)", size=16, weight=ft.FontWeight.BOLD),
+                                    ft.Text("Master Mkhedruli letters, sounds & visual mnemonics", size=12, color=ft.Colors.GREY_600),
                                 ],
                                 spacing=2,
                                 expand=True
                             ),
                             ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ft.Colors.GREY_400)
                         ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        spacing=15
                     )
                 ),
                 elevation=2

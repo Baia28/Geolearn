@@ -26,6 +26,7 @@ class MultipleChoiceCard(ft.Container):
         prompt_ui = None
         subtitle_ui = ft.Container()
         correct_ans = "Missing Answer"
+        subtitle_controls = []  # Default initialization prevents UnboundLocalError
 
         # --- Dynamic Instruction Banner Logic ---
         #task_instruction = "Select the correct answer"
@@ -146,6 +147,13 @@ class MultipleChoiceCard(ft.Container):
             
             
             #subtitle_ui = ft.Text(trans_text, size=16, color=ft.Colors.GREY_500, italic=True)
+
+            # Ensure subtitle_ui is constructed safely using subtitle_controls
+            subtitle_ui = ft.Column(
+                controls=subtitle_controls,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=4
+            )
 
             subtitle_controls = []
             if instruction_text:

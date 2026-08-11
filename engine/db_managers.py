@@ -223,6 +223,129 @@ class ContentDBManager:
         conn.close()
         return res
 
+    def get_alphabet_letters(self):
+        """Fetches all 33 letters with their letter audio."""
+        conn = (
+            getattr(self, "conn", None)
+            or getattr(self, "connection", None)
+            or getattr(self, "db", None)
+            or getattr(self, "_conn", None)
+            or getattr(self, "db_conn", None)
+        )
+        query = """
+            SELECT 
+                c.content_id,
+                c.georgian,
+                c.transliteration,
+                c.english,
+                (
+                    SELECT m.file_path 
+                    FROM media m 
+                    JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = c.content_id AND mt.name LIKE 'audio%' 
+                    LIMIT 1
+                ) AS letter_audio
+            FROM content c
+            WHERE c.topic = 'alphabet' 
+              AND (c.semantic_group IS NULL OR c.semantic_group != 'example')
+            ORDER BY c.content_id ASC
+        """
+        cursor = conn.cursor()
+        cursor.execute(query)
+        return cursor.fetchall()
+
+    def get_alphabet_detail(self, letter_geo):
+        """Fetches a letter and its corresponding example word linked via response_to."""
+        conn = (
+            getattr(self, "conn", None)
+            or getattr(self, "connection", None)
+            or getattr(self, "db", None)
+            or getattr(self, "_conn", None)
+            or getattr(self, "db_conn", None)
+        )
+        cursor = conn.cursor()
+
+        # 1. Fetch Letter
+        cursor.execute("""
+            SELECT 
+                c.content_id, c.georgian, c.transliteration, c.english,
+                (
+                    SELECT m.file_path 
+                    FROM media m 
+                    JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = c.content_id AND mt.name LIKE 'audio%' 
+                    LIMIT 1
+                ) AS letter_audio
+            FROM content c
+            WHERE c.georgian = ? AND c.topic = 'alphabet' AND (c.semantic_group IS NULL OR c.semantic_group != 'example')
+        """, (letter_geo,))
+        letter = cursor.fetchone()
+
+        # 2. Fetch Example Word tagged with response_to = letter_geo
+        cursor.execute("""
+            SELECT 
+                c.content_id, c.georgian, c.english, c.transliteration,
+                (
+                    SELECT m.file_path 
+                    FROM media m 
+                    JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = c.content_id AND mt.name LIKE 'image%' 
+                    LIMIT 1
+                ) AS example_image,
+                (
+                    SELECT m.file_path 
+                    FROM media m 
+                    JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = c.content_id AND mt.name LIKE 'audio%' 
+                    LIMIT 1
+                ) AS example_audio
+            FROM content c
+            WHERE c.topic = 'alphabet' AND c.semantic_group = 'example' AND c.response_to = ?
+            LIMIT 1
+        """, (letter_geo,))
+        example = cursor.fetchone()
+
+        return {"letter": letter, "example": example}
+
+    def get_alphabet_game_items(self):
+        """Fetches all letters and linked example images for the quiz game."""
+        conn = (
+            getattr(self, "conn", None)
+            or getattr(self, "connection", None)
+            or getattr(self, "db", None)
+            or getattr(self, "_conn", None)
+            or getattr(self, "db_conn", None)
+        )
+        query = """
+            SELECT 
+                l.georgian AS letter_geo,
+                l.transliteration AS latin,
+                (
+                    SELECT m.file_path 
+                    FROM media m JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = l.content_id AND mt.name LIKE 'audio%' LIMIT 1
+                ) AS letter_audio,
+                e.georgian AS example_word,
+                e.english AS example_meaning,
+                (
+                    SELECT m.file_path 
+                    FROM media m JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = e.content_id AND mt.name LIKE 'image%' LIMIT 1
+                ) AS example_image,
+                (
+                    SELECT m.file_path 
+                    FROM media m JOIN media_types mt ON m.media_type_id = mt.media_type_id 
+                    WHERE m.content_id = e.content_id AND mt.name LIKE 'audio%' LIMIT 1
+                ) AS example_audio
+            FROM content l
+            LEFT JOIN content e ON e.response_to = l.georgian AND e.semantic_group = 'example'
+            WHERE l.topic = 'alphabet' AND (l.semantic_group IS NULL OR l.semantic_group != 'example')
+            ORDER BY l.content_id ASC
+        """
+        cursor = conn.cursor()
+        cursor.execute(query)
+        return cursor.fetchall()
+
     def get_word_details(self, content_id):
         """
         Fetches detailed info for a single word/phrase by content_id.
