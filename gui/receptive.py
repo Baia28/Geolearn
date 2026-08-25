@@ -2,6 +2,8 @@ import flet as ft
 import random
 
 from gui.audio_utils import play_audio_file
+from gui.gui_helper import create_review_badge
+
 
 class MultipleChoiceCard(ft.Container):
     def __init__(self, mode: str, target_data: dict, distractors: list, on_submit: callable):
@@ -42,7 +44,7 @@ class MultipleChoiceCard(ft.Container):
             task_instruction = "Translate to English"
             task_icon = ft.Icons.TRANSLATE
         elif self.mode == "mc_eng_to_geo":
-            task_instruction = "How do you say this in Georgian?"
+            task_instruction = "Translate to Georgian"
             task_icon = ft.Icons.LANGUAGE
         elif self.mode == "mc_geo_pair_geo":
             task_instruction = "Choose the most natural response"
@@ -81,6 +83,13 @@ class MultipleChoiceCard(ft.Container):
                 on_click=lambda e: self.trigger_audio(),
                 content=ft.Icon(ft.Icons.VOLUME_UP_ROUNDED, size=48, color=ft.Colors.BLUE_700)
             )
+
+            # Subtitle below the audio button
+            subtitle_controls = [
+                ft.Text("Tap button to listen again", size=12, color=ft.Colors.GREY_600, italic=True)
+            ]
+
+
             # Subtitle with optional Transliteration
             #subtitle_controls = [
             #    ft.Text("Listen and select the correct answer", size=13, color=ft.Colors.GREY_500, italic=True)
@@ -244,23 +253,30 @@ class MultipleChoiceCard(ft.Container):
         # -------------------------------------------------------------
         # 5. Assemble View
         # -------------------------------------------------------------
+        review_badge = create_review_badge(self.target)
+        
+        content_controls = []
+        if review_badge:
+            content_controls.append(review_badge)
+            
+        content_controls.extend([
+            instruction_ui,  
+            ft.Container(height=5),
+            prompt_ui,
+            subtitle_ui,
+            ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
+            ft.Column(
+                controls=self.option_buttons,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=12
+            )
+        ])
+
         self.content = ft.Column(
-            controls=[
-                instruction_ui,  
-                ft.Container(height=5), # Slight padding below instruction
-                prompt_ui,
-                subtitle_ui,
-                ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
-                # Group buttons in a nested Column with dedicated spacing
-                ft.Column(
-                    controls=self.option_buttons,
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=12  # <-- Adjust space BETWEEN option buttons here!
-                )
-            ],
+            controls=content_controls,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.START,
-            spacing=5  # Keeps prompt and subtitle tightly stacked
+            spacing=5
         )
 
     def trigger_audio(self, text: str = None):

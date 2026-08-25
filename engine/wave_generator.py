@@ -389,7 +389,8 @@ class WaveGenerator:
                             "geo": geo, 
                             "trans": trans,
                             "image": image_src,
-                            "audio": audio_src
+                            "audio": audio_src,
+                            "is_review_item": True  
                         }
                     })
                 active_step_counter = 0

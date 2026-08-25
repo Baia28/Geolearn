@@ -2,6 +2,7 @@ import flet as ft
 import random
 from gui.keyboard import GeorgianKeyboard
 from gui.audio_utils import play_audio_file
+from gui.gui_helper import create_review_badge
 
 class MatchMatrix3x3(ft.Container):
     def __init__(self, targets: list, on_submit: callable):
@@ -157,7 +158,7 @@ class TypeGeorgian(ft.Column):
 
         # 1. Setup Prompt UI according to Mode
         if self.mode == "audio_dictation":
-            prompt_ui = ft.Container(
+            audio_btn = ft.Container(
                 width=90, 
                 height=90, 
                 bgcolor=ft.Colors.BLUE_100, 
@@ -170,6 +171,15 @@ class TypeGeorgian(ft.Column):
             )
             #subtitle_ui = ft.Text("Listen and type in Georgian", size=13, color=ft.Colors.GREY_500, italic=True)
             #self.trigger_audio()
+
+            prompt_ui = ft.Column(
+                controls=[
+                    audio_btn,
+                    ft.Text("Tap button to listen again", size=12, color=ft.Colors.GREY_600, italic=True)
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=4
+            )
         else:
             prompt_ui = ft.Text(self.target.get("eng", ""), size=28, weight=ft.FontWeight.W_500)
             # Add clear instructions for typing
@@ -205,18 +215,23 @@ class TypeGeorgian(ft.Column):
             ),
             margin=ft.margin.only(top=-4)  # Pulls blue button up closer to spacebar
         )
-        
+
+        review_badge = create_review_badge(self.target)
+
         # Assemble layout without transparent Dividers
-        self.controls = [
+        self.controls = []
+        if review_badge:
+            self.controls.append(review_badge)
+
+        self.controls.extend([
             instruction_ui,
             ft.Container(height=5),
             prompt_ui,
-            #subtitle_ui,
             self.input_field, 
             self.feedback_container,
             self.keyboard,
             self.submit_btn
-        ]
+        ])
 
     def _append_char(self, char):
         if self.evaluated:
@@ -266,6 +281,12 @@ class TypeGeorgian(ft.Column):
         geo_target = self.target.get("geo", "")
         trans_target = self.target.get("trans", "")
 
+        # Select label based on user outcome
+        target_label = "Correct Answer:" if self.is_correct else "Expected Answer:"
+
+        geo_target = self.target.get("geo", "")
+        trans_target = self.target.get("trans", "")
+
         feedback_column = [
             ft.Row([
                 ft.Icon(icon_name, color=icon_color, size=24),
@@ -273,7 +294,7 @@ class TypeGeorgian(ft.Column):
             ], alignment=ft.MainAxisAlignment.CENTER),
 
             ft.Row([
-                ft.Text(f"Target: {geo_target}", size=18, weight=ft.FontWeight.BOLD),
+                ft.Text(f"{target_label} {geo_target}", size=18, weight=ft.FontWeight.BOLD),
                 ft.IconButton(
                     icon=ft.Icons.VOLUME_UP,
                     icon_color=ft.Colors.BLUE_600,
