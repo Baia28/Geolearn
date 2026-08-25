@@ -253,13 +253,14 @@ class TypeGeorgian(ft.Column):
         play_audio_file(self.page, audio_path)
         print(f"🔊 Playing audio for: {self.target.get('geo', 'Unknown')}")
 
-    def _validate(self, e):
-        if self.evaluated:
+    def _validate(self, e=None):
+        if hasattr(self, "evaluated") and self.evaluated:
             return
 
         self.user_text = self.input_field.value.strip() if self.input_field.value else ""
         target_text = self.target.get("geo", "").strip()
 
+        # Forgiving punctuation matching
         punctuation = "!?.,;:'\""
         clean_user = self.user_text.translate(str.maketrans('', '', punctuation)).lower()
         clean_target = target_text.translate(str.maketrans('', '', punctuation)).lower()
@@ -267,53 +268,74 @@ class TypeGeorgian(ft.Column):
         self.is_correct = (clean_user == clean_target)
         self.evaluated = True
 
-        # Lock inputs & hide internal keyboard/button so session_view takes over
+        # Lock text field and hide keyboard & submit button to reclaim UI space
         self.input_field.disabled = True
         self.keyboard.visible = False
-        self.submit_btn.visible = False  # Hides container and button seamlessly
+        self.submit_btn.visible = False
 
+        # Color palette
         bg_color = ft.Colors.GREEN_50 if self.is_correct else ft.Colors.RED_50
-        border_color = ft.Colors.GREEN_400 if self.is_correct else ft.Colors.RED_400
+        border_color = ft.Colors.GREEN_300 if self.is_correct else ft.Colors.RED_300
         icon_name = ft.Icons.CHECK_CIRCLE if self.is_correct else ft.Icons.CANCEL
         icon_color = ft.Colors.GREEN_600 if self.is_correct else ft.Colors.RED_600
         title_text = "Correct! 🎉" if self.is_correct else "Not quite..."
 
-        geo_target = self.target.get("geo", "")
-        trans_target = self.target.get("trans", "")
-
-        # Select label based on user outcome
         target_label = "Correct Answer:" if self.is_correct else "Expected Answer:"
-
         geo_target = self.target.get("geo", "")
         trans_target = self.target.get("trans", "")
 
+        # Clean vertical-centered stack
         feedback_column = [
+            # 1. Header (Status)
             ft.Row([
-                ft.Icon(icon_name, color=icon_color, size=24),
+                ft.Icon(icon_name, color=icon_color, size=22),
                 ft.Text(title_text, size=18, weight=ft.FontWeight.BOLD, color=icon_color)
             ], alignment=ft.MainAxisAlignment.CENTER),
 
-            ft.Row([
-                ft.Text(f"{target_label} {geo_target}", size=18, weight=ft.FontWeight.BOLD),
-                ft.IconButton(
-                    icon=ft.Icons.VOLUME_UP,
-                    icon_color=ft.Colors.BLUE_600,
-                    on_click=lambda _: self.trigger_audio(),
-                    tooltip="Listen to correct audio"
-                )
-            ], alignment=ft.MainAxisAlignment.CENTER)
+            # 2. Section Label
+            ft.Text(target_label, size=12, color=ft.Colors.GREY_700, weight=ft.FontWeight.W_500),
+
+            # 3. Georgian Target Word
+            ft.Text(
+                geo_target, 
+                size=24, 
+                weight=ft.FontWeight.BOLD, 
+                text_align=ft.TextAlign.CENTER
+            ),
+
+            # 4. Audio Button (Centered directly below the word)
+            ft.IconButton(
+                icon=ft.Icons.VOLUME_UP_ROUNDED,
+                icon_color=ft.Colors.BLUE_600,
+                icon_size=26,
+                on_click=lambda _: self.trigger_audio(),
+                tooltip="Listen to audio"
+            )
         ]
 
+        # 5. Transliteration / Pronunciation (Centered at bottom)
         if trans_target:
             feedback_column.append(
-                ft.Text(f"Transliteration: {trans_target}", size=14, color=ft.Colors.GREY_600, italic=True)
+                ft.Text(
+                    f"Pronunciation: {trans_target}", 
+                    size=13, 
+                    color=ft.Colors.GREY_600, 
+                    italic=True,
+                    text_align=ft.TextAlign.CENTER
+                )
             )
 
-        self.feedback_container.content = ft.Column(feedback_column, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        # Render compact card with strict center alignment
+        self.feedback_container.content = ft.Column(
+            controls=feedback_column,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=4
+        )
         self.feedback_container.bgcolor = bg_color
         self.feedback_container.border = ft.border.all(1, border_color)
-        self.feedback_container.border_radius = 10
-        self.feedback_container.padding = 10
+        self.feedback_container.border_radius = 12
+        self.feedback_container.padding = 14
         self.feedback_container.width = 350
         self.feedback_container.visible = True
 

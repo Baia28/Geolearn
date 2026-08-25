@@ -512,121 +512,172 @@ class ContentDBManager:
         return lines
 
     def get_distractors(self, lesson_id, correct_content_id, limit=2):
-        """Dynamically generates contextual word distractors across tiers."""
+        """Dynamically generates contextual distractors matching exact type, ensuring absolute uniqueness."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         distractors = []
         
-        # Tier 1: Same Lesson
-        if lesson_id:
-            cursor.execute("""
-                SELECT DISTINCT c.english, c.georgian
-                FROM content c
-                JOIN lesson_contents lc ON c.content_id = lc.associated_id
-                WHERE lc.lesson_id = ? 
-                  AND c.content_id != ? 
-                  AND LENGTH(c.english) >= 2
-                ORDER BY RANDOM() LIMIT ?
-            """, (lesson_id, correct_content_id, limit))
-            distractors.extend(cursor.fetchall())
-
-        # Tier 2: Same Unit Fallback
-        if len(distractors) < limit and lesson_id:
-            needed = limit - len(distractors)
-            picked_english = [row[0] for row in distractors]
+        # 1. Identify Target Data & Seed Exclusion Lists
+        cursor.execute("""
+            SELECT t.name, c.english, c.georgian
+            FROM content c
+            LEFT JOIN types t ON c.type_id = t.type_id
+            WHERE c.content_id = ?
+        """, (correct_content_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return []
             
-            query = """
-                SELECT DISTINCT c.english, c.georgian
-                FROM content c
-                JOIN lesson_contents lc ON c.content_id = lc.associated_id
-                JOIN lessons l ON lc.lesson_id = l.lesson_id
-                WHERE l.unit_id = (SELECT unit_id FROM lessons WHERE lesson_id = ?)
-                  AND c.content_id != ?
-                  AND LENGTH(c.english) >= 2
-            """
-            params = [lesson_id, correct_content_id]
-            if picked_english:
-                placeholders = ','.join(['?'] * len(picked_english))
-                query += f" AND c.english NOT IN ({placeholders})"
-                params.extend(picked_english)
+        target_type, target_eng, target_geo = row
+        target_type = (target_type or "").lower()
+        
+        # Initialize exclusion lists with the correct answer's text to prevent duplicates
+        excluded_eng = [target_eng] if target_eng else []
+        excluded_geo = [target_geo] if target_geo else []
+        
+        # 2. Build Strict Type-Matching Filters based on t.name
+        if target_type in ('letter', 'alphabet'):
+            type_filter = "LOWER(t.name) IN ('letter', 'alphabet')"
+        elif target_type == 'phrase':
+            type_filter = "LOWER(t.name) = 'phrase'"
+        else:
+            # Standard words (strictly exclude letters and phrases)
+            type_filter = "(LOWER(t.name) NOT IN ('letter', 'alphabet', 'phrase') OR t.name IS NULL)"
+
+        # 3. Helper function to fetch tiers dynamically with exclusions
+        def fetch_tier(query_base, params_base, needed):
+            query = query_base
+            params = list(params_base)
+            
+            if excluded_eng:
+                query += f" AND c.english NOT IN ({','.join(['?']*len(excluded_eng))})"
+                params.extend(excluded_eng)
+            if excluded_geo:
+                query += f" AND c.georgian NOT IN ({','.join(['?']*len(excluded_geo))})"
+                params.extend(excluded_geo)
+                
             query += " ORDER BY RANDOM() LIMIT ?"
             params.append(needed)
             
             cursor.execute(query, params)
-            distractors.extend(cursor.fetchall())
+            results = cursor.fetchall()
+            
+            for eng, geo in results:
+                distractors.append((eng, geo))
+                if eng: excluded_eng.append(eng)
+                if geo: excluded_geo.append(geo)
 
-        # Tier 3: Global Dictionary Fallback
+        # Tier 1: Current Lesson (Exact Type Match)
+        if lesson_id and len(distractors) < limit:
+            q1 = f"""
+                SELECT DISTINCT c.english, c.georgian
+                FROM content c
+                LEFT JOIN types t ON c.type_id = t.type_id
+                JOIN lesson_contents lc ON c.content_id = lc.associated_id
+                WHERE lc.lesson_id = ? AND c.content_id != ? 
+                  AND LENGTH(c.english) >= 1 AND {type_filter}
+            """
+            fetch_tier(q1, (lesson_id, correct_content_id), limit - len(distractors))
+
+        # Tier 2: Past Lessons (Spaced Repetition Reinforcement)
+        if lesson_id and len(distractors) < limit:
+            q2 = f"""
+                SELECT DISTINCT c.english, c.georgian
+                FROM content c
+                LEFT JOIN types t ON c.type_id = t.type_id
+                JOIN lesson_contents lc ON c.content_id = lc.associated_id
+                WHERE lc.lesson_id <= ? AND c.content_id != ? 
+                  AND LENGTH(c.english) >= 1 AND {type_filter}
+            """
+            fetch_tier(q2, (lesson_id, correct_content_id), limit - len(distractors))
+
+        # Tier 3: Global Pool Fallback
         if len(distractors) < limit:
-            needed = limit - len(distractors)
-            picked_english = [row[0] for row in distractors]
-            
-            query = """
-                SELECT DISTINCT english, georgian FROM content 
-                WHERE content_id != ? AND LENGTH(english) >= 2
+            q3 = f"""
+                SELECT DISTINCT c.english, c.georgian 
+                FROM content c
+                LEFT JOIN types t ON c.type_id = t.type_id
+                WHERE c.content_id != ? 
+                  AND LENGTH(c.english) >= 1 AND {type_filter}
             """
-            params = [correct_content_id]
-            if picked_english:
-                placeholders = ','.join(['?'] * len(picked_english))
-                query += f" AND english NOT IN ({placeholders})"
-                params.extend(picked_english)
-            query += " ORDER BY RANDOM() LIMIT ?"
-            params.append(needed)
-            
-            cursor.execute(query, params)
-            distractors.extend(cursor.fetchall())
+            fetch_tier(q3, (correct_content_id,), limit - len(distractors))
 
         conn.close()
         return distractors[:limit]
 
     def get_convo_distractors(self, lesson_id, exclude_text="", limit=2):
-        """Pulls contextual conversational response alternatives with full translation & transliteration metadata.
-        while strictly excluding the correct answer text to prevent duplicate options. """
+        """Pulls contextual conversational response alternatives with full translation & transliteration metadata,
+        strictly excluding the correct answer text and preventing duplicates."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         exclude_text_clean = exclude_text.strip() if exclude_text else ""
         distractors = []
+        
+        # Seed the exclusion blacklist with the correct answer's text
+        excluded_geo = [exclude_text_clean] if exclude_text_clean else []
 
+        # Helper to fetch tiers dynamically while enforcing strict text uniqueness
+        def fetch_tier(query_base, params_base, needed):
+            query = query_base
+            params = list(params_base)
+
+            if excluded_geo:
+                placeholders = ','.join(['?'] * len(excluded_geo))
+                query += f" AND TRIM(c.georgian) NOT IN ({placeholders})"
+                params.extend(excluded_geo)
+
+            query += " ORDER BY RANDOM() LIMIT ?"
+            params.append(needed * 2)  # Request extra rows to filter internal duplicates in Python
+
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+
+            for geo, eng, trans in results:
+                geo_clean = geo.strip() if geo else ""
+                if geo_clean and geo_clean not in excluded_geo:
+                    distractors.append((geo, eng or "", trans or ""))
+                    excluded_geo.append(geo_clean)
+                    if len(distractors) >= limit:
+                        break
 
         # Tier 1: Same Unit with 'response' tags
-        cursor.execute("""
-            SELECT DISTINCT c.georgian, c.english, c.transliteration 
-            FROM content c
-            JOIN content_tags ct ON c.content_id = ct.content_id
-            JOIN tags t ON ct.tag_id = t.tag_id
-            JOIN lesson_contents lc ON c.content_id = lc.associated_id
-            JOIN lessons l ON lc.lesson_id = l.lesson_id
-            WHERE t.name = 'response' 
-              AND l.unit_id = (SELECT unit_id FROM lessons WHERE lesson_id = ?)
-              AND c.content_id != ?
-            ORDER BY RANDOM() LIMIT ?
-        """, (lesson_id, exclude_text_clean, limit))
-        distractors.extend(cursor.fetchall())
-        
-        # Tier 2: Global conversational alternatives fallback
-        if len(distractors) < limit:
-            needed = limit - len(distractors)
-
-            # Collect all already picked texts (including correct answer) to avoid duplicates
-            already_picked = [exclude_text_clean] + [row[0].strip() for row in distractors]
-
-            placeholders = ','.join(['?'] * len(already_picked))
-
-            query = f"""
+        if lesson_id and len(distractors) < limit:
+            q1 = """
                 SELECT DISTINCT c.georgian, c.english, c.transliteration 
                 FROM content c
                 JOIN content_tags ct ON c.content_id = ct.content_id
                 JOIN tags t ON ct.tag_id = t.tag_id
+                JOIN lesson_contents lc ON c.content_id = lc.associated_id
+                JOIN lessons l ON lc.lesson_id = l.lesson_id
                 WHERE t.name = 'response' 
-                  AND TRIM(c.georgian) NOT IN ({placeholders})
-                ORDER BY RANDOM() LIMIT ?
+                  AND l.unit_id = (SELECT unit_id FROM lessons WHERE lesson_id = ?)
             """
+            fetch_tier(q1, (lesson_id,), limit - len(distractors))
 
-            params = already_picked + [needed]
-            
-            cursor.execute(query, params)
-            distractors.extend(cursor.fetchall())
-            
+        # Tier 2: Global conversational alternatives fallback ('response' tag)
+        if len(distractors) < limit:
+            q2 = """
+                SELECT DISTINCT c.georgian, c.english, c.transliteration 
+                FROM content c
+                JOIN content_tags ct ON c.content_id = ct.content_id
+                JOIN tags t ON ct.tag_id = t.tag_id
+                WHERE t.name = 'response'
+            """
+            fetch_tier(q2, (), limit - len(distractors))
+
+        # Tier 3: General Phrase Fallback (Failsafe if database runs low on 'response' tags)
+        if len(distractors) < limit:
+            q3 = """
+                SELECT DISTINCT c.georgian, c.english, c.transliteration 
+                FROM content c
+                LEFT JOIN types t ON c.type_id = t.type_id
+                WHERE LOWER(t.name) = 'phrase'
+            """
+            fetch_tier(q3, (), limit - len(distractors))
+
         conn.close()
         return distractors[:limit]
 
