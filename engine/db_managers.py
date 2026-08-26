@@ -517,9 +517,9 @@ class ContentDBManager:
         cursor = conn.cursor()
         distractors = []
         
-        # 1. Identify Target Data & Seed Exclusion Lists
+        # 1. Identify Target Data
         cursor.execute("""
-            SELECT t.name, c.english, c.georgian
+            SELECT c.type_id, t.name, c.english, c.georgian
             FROM content c
             LEFT JOIN types t ON c.type_id = t.type_id
             WHERE c.content_id = ?
@@ -530,23 +530,28 @@ class ContentDBManager:
             conn.close()
             return []
             
-        target_type, target_eng, target_geo = row
-        target_type = (target_type or "").lower()
+        raw_type_id, t_name, target_eng, target_geo = row
         
-        # Initialize exclusion lists with the correct answer's text to prevent duplicates
+        # Combine both raw_type_id and t_name so numeric IDs do not overwrite t_name
+        combined_type_info = f"{raw_type_id or ''} {t_name or ''}".lower()
+        
+        # Initialize exclusion lists with correct answer text
         excluded_eng = [target_eng] if target_eng else []
         excluded_geo = [target_geo] if target_geo else []
         
-        # 2. Build Strict Type-Matching Filters based on t.name
-        if target_type in ('letter', 'alphabet'):
-            type_filter = "LOWER(t.name) IN ('letter', 'alphabet')"
-        elif target_type == 'phrase':
-            type_filter = "LOWER(t.name) = 'phrase'"
+        # 2. Strict Type-Matching Filters
+        if any(keyword in combined_type_info for keyword in ('letter', 'alphabet')):
+            type_filter = "(t.name LIKE '%letter%' OR t.name LIKE '%alphabet%' OR c.type_id LIKE '%letter%' OR c.type_id LIKE '%alphabet%')"
+        elif 'phrase' in combined_type_info:
+            type_filter = "(t.name LIKE '%phrase%' OR c.type_id LIKE '%phrase%')"
         else:
-            # Standard words (strictly exclude letters and phrases)
-            type_filter = "(LOWER(t.name) NOT IN ('letter', 'alphabet', 'phrase') OR t.name IS NULL)"
+            # Standard words: strictly exclude letters and phrases
+            type_filter = """
+                (t.name NOT LIKE '%letter%' AND t.name NOT LIKE '%alphabet%' AND t.name NOT LIKE '%phrase%' OR t.name IS NULL) AND
+                (c.type_id NOT LIKE '%letter%' AND c.type_id NOT LIKE '%alphabet%' AND c.type_id NOT LIKE '%phrase%' OR c.type_id IS NULL)
+            """
 
-        # 3. Helper function to fetch tiers dynamically with exclusions
+        # Helper to fetch tiers dynamically with exclusions
         def fetch_tier(query_base, params_base, needed):
             query = query_base
             params = list(params_base)
@@ -569,7 +574,7 @@ class ContentDBManager:
                 if eng: excluded_eng.append(eng)
                 if geo: excluded_geo.append(geo)
 
-        # Tier 1: Current Lesson (Exact Type Match)
+        # Tier 1: Lesson Context (if lesson_id provided)
         if lesson_id and len(distractors) < limit:
             q1 = f"""
                 SELECT DISTINCT c.english, c.georgian
@@ -581,28 +586,16 @@ class ContentDBManager:
             """
             fetch_tier(q1, (lesson_id, correct_content_id), limit - len(distractors))
 
-        # Tier 2: Past Lessons (Spaced Repetition Reinforcement)
-        if lesson_id and len(distractors) < limit:
-            q2 = f"""
-                SELECT DISTINCT c.english, c.georgian
-                FROM content c
-                LEFT JOIN types t ON c.type_id = t.type_id
-                JOIN lesson_contents lc ON c.content_id = lc.associated_id
-                WHERE lc.lesson_id <= ? AND c.content_id != ? 
-                  AND LENGTH(c.english) >= 1 AND {type_filter}
-            """
-            fetch_tier(q2, (lesson_id, correct_content_id), limit - len(distractors))
-
-        # Tier 3: Global Pool Fallback
+        # Tier 2: Global Pool Fallback (Strictly Type-Matched)
         if len(distractors) < limit:
-            q3 = f"""
+            q2 = f"""
                 SELECT DISTINCT c.english, c.georgian 
                 FROM content c
                 LEFT JOIN types t ON c.type_id = t.type_id
                 WHERE c.content_id != ? 
                   AND LENGTH(c.english) >= 1 AND {type_filter}
             """
-            fetch_tier(q3, (correct_content_id,), limit - len(distractors))
+            fetch_tier(q2, (correct_content_id,), limit - len(distractors))
 
         conn.close()
         return distractors[:limit]
@@ -630,7 +623,7 @@ class ContentDBManager:
                 params.extend(excluded_geo)
 
             query += " ORDER BY RANDOM() LIMIT ?"
-            params.append(needed * 2)  # Request extra rows to filter internal duplicates in Python
+            params.append(needed * 2)
 
             cursor.execute(query, params)
             results = cursor.fetchall()

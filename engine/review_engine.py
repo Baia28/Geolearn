@@ -184,18 +184,11 @@ class ReviewSession:
         return review_ids
 
     def _get_distractors(self, correct_content_id, limit=2):
-        """Generates global distractors out of the main dictionary pool."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT DISTINCT english, georgian FROM content 
-            WHERE content_id != ? AND LENGTH(english) >= 2
-            ORDER BY RANDOM() LIMIT ?
-        """, (correct_content_id, limit))
-        distractors = cursor.fetchall()
-        conn.close()
-        return distractors
+        """Delegates distractor generation to ContentDBManager to ensure strict type matching and uniqueness."""
+        from engine.db_managers import ContentDBManager
+        db_mgr = ContentDBManager(self.db_path)
+        # Passing lesson_id=None forces ContentDBManager to use its global pool matching the target's exact type
+        return db_mgr.get_distractors(lesson_id=None, correct_content_id=correct_content_id, limit=limit)
 
     def _build_review_session(self):
         """Assembles a mixed, balanced deck entirely consisting of review elements."""
@@ -234,8 +227,10 @@ class ReviewSession:
                 "eng": eng, 
                 "geo": geo, 
                 "trans": display_trans,
-                "audio": audio_file  # e.g., 'audio/gamarjoba.m4a'
+                "audio": audio_file
             }
+            
+            # Now uses the strictly typed db_mgr distractor generator
             distractors = self._get_distractors(c_id, limit=2)
             
             # Tier 1 Card: Receptive Multiple Choice (Shuffled types)
