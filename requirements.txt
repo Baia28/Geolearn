@@ -1,0 +1,77 @@
+1. System Package Dependencies
+Install Python development tools, SQLite, GTK+ 3 (for desktop GUI rendering), and libmpv (required by Flet for audio playback):
+
+Bash
+sudo apt update
+sudo apt install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    sqlite3 \
+    libgtk-3-dev \
+    libmpv-dev \
+    mpv \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad
+--------------------------------------------
+
+libgtk-3-dev: Provides the windowing and rendering pipeline for Flutter/Flet desktop.
+libmpv-dev / mpv: Handles audio backend decoding for audio_utils and sound clips.
+
+
+
+2. Python Virtual Environment Setup
+Create and activate an isolated environment in project directory:
+
+Bash
+# Navigate to project folder
+cd /home/baia/Programming/Geolearn
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Upgrade pip
+pip install --upgrade pip
+
+
+
+3. Project Python Packages 
+
+flet>=0.21.0
+
+
+4. Running the Application
+Ensure  environment is active, then launch main controller script:
+
+Bash
+source venv/bin/activate
+python3 guimain.py
+Common Linux Edge Cases & Fixes
+libmpv.so.1 missing error: If audio crashes or fails to initialize, create a symlink to your installed libmpv version:
+
+Bash
+sudo ln -s /usr/lib/x86_64-linux-gnu/libmpv.so.2 /usr/lib/x86_64-linux-gnu/libmpv.so.1
+Wayland graphics glitches: If the UI flickers on newer Ubuntu versions running Wayland, force X11 backend before launching:
+
+Bash
+export GDK_BACKEND=x11
+python3 guimain.py
+
+
+
+
+Additional comments:
+$ pip show flet
+Name: flet
+Version: 0.25.2
+Summary: Flet for Python - easily build interactive multi-platform apps in Python
+Home-page: https://flet.dev
+Author: Appveyor Systems Inc.
+Author-email: hello@flet.dev
+License: Apache-2.0
+Location: /home/baia/Programming/Geolearn/.venv/lib/python3.10/site-packages
+Requires: httpx, oauthlib, repath
+Required-by: flet-desktop
