@@ -1,0 +1,117 @@
+# Sub-controller managing routing, state, and hub navigation
+
+import flet as ft
+from alphabet.alphabet_db import AlphabetDB
+from alphabet.alphabet_gallery import AlphabetGalleryView
+from alphabet.anban_game import AnbanGameView
+
+class AlphabetPage(ft.Column):
+    """Sub-controller inside main_stage managing navigation between Gallery, Game, and Home Dashboard."""
+    
+    def __init__(self, on_back_home):
+        super().__init__()
+        self.on_back_home = on_back_home
+        self.db = AlphabetDB()
+        self.expand = True
+        self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+        
+        self.show_main_menu()
+
+    def show_main_menu(self):
+        self.controls.clear()
+
+        header = ft.Row(
+            controls=[
+                ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_home()),
+                ft.Text("Georgian Alphabet Hub (ანბანი)", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                ft.Container(width=40)
+            ],
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+        )
+
+        btn_gallery = ft.Card(
+            content=ft.Container(
+                padding=20,
+                on_click=lambda e: self.launch_gallery(),
+                content=ft.Row(
+                    controls=[
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.GRID_VIEW_ROUNDED, size=32, color=ft.Colors.WHITE),
+                            bgcolor=ft.Colors.BLUE_600,
+                            width=56, height=56,
+                            border_radius=12,
+                            alignment=ft.alignment.center
+                        ),
+                        ft.Column(
+                            controls=[
+                                ft.Text("Alphabet Gallery", size=18, weight=ft.FontWeight.BOLD),
+                                ft.Text("Browse all 33 Mkhedruli letters, sounds & examples", size=13, color=ft.Colors.GREY_600),
+                            ],
+                            spacing=4,
+                            expand=True
+                        ),
+                        ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ft.Colors.GREY_400)
+                    ],
+                    spacing=15
+                )
+            ),
+            elevation=2
+        )
+
+        btn_game = ft.Card(
+            content=ft.Container(
+                padding=20,
+                on_click=lambda e: self.launch_game(),
+                content=ft.Row(
+                    controls=[
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.SPORTS_ESPORTS_ROUNDED, size=32, color=ft.Colors.WHITE),
+                            bgcolor=ft.Colors.GREEN_600,
+                            width=56, height=56,
+                            border_radius=12,
+                            alignment=ft.alignment.center
+                        ),
+                        ft.Column(
+                            controls=[
+                                ft.Text("Anban Game", size=18, weight=ft.FontWeight.BOLD),
+                                ft.Text("Visual matching practice: match pictures to letters", size=13, color=ft.Colors.GREY_600),
+                            ],
+                            spacing=4,
+                            expand=True
+                        ),
+                        ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ft.Colors.GREY_400)
+                    ],
+                    spacing=15
+                )
+            ),
+            elevation=2
+        )
+
+        menu = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text("SELECT AN ACTIVITY", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_600),
+                    btn_gallery,
+                    ft.Container(height=5),
+                    btn_game,
+                ],
+                spacing=12
+            ),
+            width=650,
+            alignment=ft.alignment.top_center
+        )
+
+        self.controls = [header, ft.Divider(height=10, color=ft.Colors.TRANSPARENT), menu]
+        if self.page:
+            self.update()
+
+    def launch_gallery(self):
+        gallery_view = AlphabetGalleryView(db=self.db, on_back_to_menu=self.show_main_menu)
+        self.controls = [gallery_view]
+        self.update()
+
+    def launch_game(self):
+        game_view = AnbanGameView(db=self.db, on_back_to_menu=self.show_main_menu)
+        self.controls = [game_view]
+        self.update()
+        game_view.start_game()
