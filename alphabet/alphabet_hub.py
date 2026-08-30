@@ -4,9 +4,11 @@ import flet as ft
 from alphabet.alphabet_db import AlphabetDB
 from alphabet.alphabet_gallery import AlphabetGalleryView
 from alphabet.anban_game import AnbanGameView
+from alphabet.alphabet_typing import AlphabetTypingGameView
+from alphabet.alphabet_keyboard import AlphabetKeyboardView
 
 class AlphabetPage(ft.Column):
-    """Sub-controller inside main_stage managing navigation between Gallery, Game, and Home Dashboard."""
+    """Sub-controller inside main_stage managing navigation between Gallery, Games, Keyboard, and Home Dashboard."""
     
     def __init__(self, on_back_home):
         super().__init__()
@@ -74,7 +76,65 @@ class AlphabetPage(ft.Column):
                         ft.Column(
                             controls=[
                                 ft.Text("Anban Game", size=18, weight=ft.FontWeight.BOLD),
-                                ft.Text("Visual matching practice: match pictures to letters", size=13, color=ft.Colors.GREY_600),
+                                ft.Text("Visual matching practice: match pictures from Gallery to letters", size=13, color=ft.Colors.GREY_600),
+                            ],
+                            spacing=4,
+                            expand=True
+                        ),
+                        ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ft.Colors.GREY_400)
+                    ],
+                    spacing=15
+                )
+            ),
+            elevation=2
+        )
+
+        btn_typing_game = ft.Card(
+            content=ft.Container(
+                padding=20,
+                on_click=lambda e: self.launch_typing_game(),
+                content=ft.Row(
+                    controls=[
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.HEADSET_ROUNDED, size=32, color=ft.Colors.WHITE),
+                            bgcolor=ft.Colors.PURPLE_600,
+                            width=56, height=56,
+                            border_radius=12,
+                            alignment=ft.alignment.center
+                        ),
+                        ft.Column(
+                            controls=[
+                                ft.Text("Listen & Type Game", size=18, weight=ft.FontWeight.BOLD),
+                                ft.Text("Audio dictation practice: listen and type letters", size=13, color=ft.Colors.GREY_600),
+                            ],
+                            spacing=4,
+                            expand=True
+                        ),
+                        ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ft.Colors.GREY_400)
+                    ],
+                    spacing=15
+                )
+            ),
+            elevation=2
+        )
+
+        btn_keyboard = ft.Card(
+            content=ft.Container(
+                padding=20,
+                on_click=lambda e: self.launch_keyboard_explorer(),
+                content=ft.Row(
+                    controls=[
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.KEYBOARD_ROUNDED, size=32, color=ft.Colors.WHITE),
+                            bgcolor=ft.Colors.AMBER_700,
+                            width=56, height=56,
+                            border_radius=12,
+                            alignment=ft.alignment.center
+                        ),
+                        ft.Column(
+                            controls=[
+                                ft.Text("Georgian Keyboard Practice", size=18, weight=ft.FontWeight.BOLD),
+                                ft.Text("Interactive large keyboard explorer with audio & Shift tutorials", size=13, color=ft.Colors.GREY_600),
                             ],
                             spacing=4,
                             expand=True
@@ -92,10 +152,14 @@ class AlphabetPage(ft.Column):
                 controls=[
                     ft.Text("SELECT AN ACTIVITY", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_600),
                     btn_gallery,
-                    ft.Container(height=5),
+                    ft.Container(height=2),
+                    btn_keyboard,
+                    ft.Container(height=2),
                     btn_game,
+                    ft.Container(height=2),
+                    btn_typing_game,
                 ],
-                spacing=12
+                spacing=10
             ),
             width=650,
             alignment=ft.alignment.top_center
@@ -115,3 +179,14 @@ class AlphabetPage(ft.Column):
         self.controls = [game_view]
         self.update()
         game_view.start_game()
+
+    def launch_typing_game(self):
+        typing_view = AlphabetTypingGameView(db=self.db, on_back_to_menu=self.show_main_menu)
+        self.controls = [typing_view]
+        self.update()
+        typing_view.start_game()
+
+    def launch_keyboard_explorer(self):
+        keyboard_view = AlphabetKeyboardView(db=self.db, on_back_to_menu=self.show_main_menu)
+        self.controls = [keyboard_view]
+        self.update()
