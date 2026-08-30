@@ -1,7 +1,5 @@
-## SQLite database queries for Mkhedruli letters & example words
-
 import sqlite3
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 class AlphabetDB:
     """Handles SQLite operations for the Georgian Alphabet hub using content_poolbook.db schema."""
@@ -15,20 +13,25 @@ class AlphabetDB:
         return conn
 
     def get_alphabet_letters(self) -> List[Dict[str, Any]]:
-        """Fetches all 33 Mkhedruli letters filtered strictly by topic='alphabet'."""
+        """Fetches all 33 Mkhedruli letters with letter sound paths and example image paths."""
         query = """
             SELECT 
                 c.content_id, 
                 c.georgian, 
                 c.transliteration, 
-                c.english,
-                m.file_path AS letter_audio
+                c.english AS linguistic_desc,
+                m_l_aud.file_path AS letter_audio,
+                m_v_img.file_path AS example_image
             FROM content c
             JOIN types t ON c.type_id = t.type_id
             JOIN content_tags ct ON c.content_id = ct.content_id
             JOIN tags tg ON ct.tag_id = tg.tag_id
-            LEFT JOIN media m ON c.content_id = m.content_id 
-                AND m.media_type_id = (SELECT media_type_id FROM media_types WHERE name = 'audio_f_default')
+            LEFT JOIN media m_l_aud ON c.content_id = m_l_aud.content_id 
+                AND m_l_aud.media_type_id = (SELECT media_type_id FROM media_types WHERE name = 'audio_f_default')
+            LEFT JOIN convo_pairs cp ON c.content_id = cp.prompt_content_id
+            LEFT JOIN content v ON cp.response_content_id = v.content_id
+            LEFT JOIN media m_v_img ON v.content_id = m_v_img.content_id 
+                AND m_v_img.media_type_id = (SELECT media_type_id FROM media_types WHERE name = 'image')
             WHERE t.name = 'letter' AND tg.name = 'alphabet'
             ORDER BY c.content_id ASC;
         """
@@ -37,16 +40,14 @@ class AlphabetDB:
             rows = cursor.execute(query).fetchall()
             return [dict(row) for row in rows]
 
-    def get_letter_detail(self, letter_geo: str) -> Dict[str, Any]:
-        """Fetches a letter and its linked example word via convo_pairs relationships."""
-        letter_query = """
-            SELECT c.content_id, c.georgian, c.transliteration, c.english, m.file_path AS letter_audio
-            FROM content c
-            JOIN types t ON c.type_id = t.type_id
-            LEFT JOIN media m ON c.content_id = m.content_id 
-                AND m.media_type_id = (SELECT media_type_id FROM media_types WHERE name = 'audio_f_default')
-            WHERE c.georgian = ? AND t.name = 'letter';
-        """
+    def get_letter_detail_by_index(self, index: int) -> Dict[str, Any]:
+        """Fetches detailed information and example word data for a letter by its 0-indexed position."""
+        letters = self.get_alphabet_letters()
+        if not letters or index < 0 or index >= len(letters):
+            return {"letter": None, "example": None, "index": 0, "total": 0}
+        
+        target_letter = letters[index]
+
         example_query = """
             SELECT 
                 c.georgian AS word, 
@@ -64,15 +65,15 @@ class AlphabetDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            letter_row = cursor.execute(letter_query, (letter_geo,)).fetchone()
-            if not letter_row:
-                return {"letter": None, "example": None}
-            
-            letter_data = dict(letter_row)
-            example_row = cursor.execute(example_query, (letter_data["content_id"],)).fetchone()
+            example_row = cursor.execute(example_query, (target_letter["content_id"],)).fetchone()
             example_data = dict(example_row) if example_row else None
             
-            return {"letter": letter_data, "example": example_data}
+            return {
+                "letter": target_letter,
+                "example": example_data,
+                "index": index,
+                "total": len(letters)
+            }
 
     def get_anban_game_questions(self) -> List[Dict[str, Any]]:
         """Queries game items strictly where topic='alphabet' to isolate distractor pools."""
