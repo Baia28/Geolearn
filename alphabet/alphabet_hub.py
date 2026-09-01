@@ -1,5 +1,3 @@
-# Sub-controller managing routing, state, and hub navigation
-
 import flet as ft
 from alphabet.alphabet_db import AlphabetDB
 from alphabet.alphabet_gallery import AlphabetGalleryView
@@ -18,12 +16,11 @@ class AlphabetPage(ft.Column):
         self.expand = True
         self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
-        self.scroll = ft.ScrollMode.AUTO
-        
         self.show_main_menu()
 
     def show_main_menu(self):
         self.controls.clear()
+        self.scroll = ft.ScrollMode.AUTO  # Enable scrolling for main menu card list
 
         header = ft.Row(
             controls=[
@@ -34,7 +31,6 @@ class AlphabetPage(ft.Column):
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN
         )
 
-        # 33 Letters gallery (with images and sounds)
         btn_gallery = ft.Card(
             content=ft.Container(
                 padding=20,
@@ -64,7 +60,6 @@ class AlphabetPage(ft.Column):
             elevation=2
         )
 
-        # Activity Card for Phonetics Guide
         btn_phonetics = ft.Card(
             content=ft.Container(
                 padding=20,
@@ -94,7 +89,6 @@ class AlphabetPage(ft.Column):
             elevation=2
         )
 
-        # Match the Gallery Image to the letter
         btn_game = ft.Card(
             content=ft.Container(
                 padding=20,
@@ -123,7 +117,6 @@ class AlphabetPage(ft.Column):
             ),
             elevation=2
         )
-
 
         btn_typing_game = ft.Card(
             content=ft.Container(
@@ -244,28 +237,33 @@ class AlphabetPage(ft.Column):
             self.update()
 
     def launch_gallery(self):
+        self.scroll = None
         gallery_view = AlphabetGalleryView(db=self.db, on_back_to_menu=self.show_main_menu)
         self.controls = [gallery_view]
         self.update()
 
     def launch_phonetics_guide(self):
+        self.scroll = None
         guide_view = PhoneticsGuideView(db=self.db, on_back_to_menu=self.show_main_menu)
         self.controls = [guide_view]
         self.update()
 
     def launch_game(self):
+        self.scroll = None
         game_view = AnbanGameView(db=self.db, on_back_to_menu=self.show_main_menu)
         self.controls = [game_view]
         self.update()
         game_view.start_game()
 
     def launch_typing_game(self):
+        self.scroll = None
         typing_view = AlphabetTypingGameView(db=self.db, on_back_to_menu=self.show_main_menu)
         self.controls = [typing_view]
         self.update()
         typing_view.start_game()
 
     def launch_keyboard_explorer(self):
+        self.scroll = None
         keyboard_view = AlphabetKeyboardView(db=self.db, on_back_to_menu=self.show_main_menu)
         self.controls = [keyboard_view]
         self.update()

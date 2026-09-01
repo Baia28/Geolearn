@@ -9,7 +9,9 @@ class PhoneticsGuideView(ft.Column):
         self.db = db
         self.on_back_to_menu = on_back_to_menu
         self.expand = True
+        self.scroll = ft.ScrollMode.AUTO
         self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+        self.spacing = 15
 
         # Load letter audio lookup table
         letters = self.db.get_alphabet_letters()
@@ -20,18 +22,25 @@ class PhoneticsGuideView(ft.Column):
     def _build_ui(self):
         self.controls.clear()
 
-        header = ft.Row(
-            controls=[
-                ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                ft.Text("Phonetics & Pronunciation Guide", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                ft.Container(width=40)
-            ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+        # Header Row
+        header = ft.Container(
+            width=650,
+            content=ft.Row(
+                controls=[
+                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
+                    ft.Text("Phonetics & Sound Groups", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                    ft.Container(width=40)
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+            )
         )
 
-        intro_text = ft.Text(
-            "Tap any letter chip to hear its exact sound. Use these groups to master subtle Georgian phonetic contrasts!",
-            size=14, color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER
+        intro_text = ft.Container(
+            width=650,
+            content=ft.Text(
+                "Tap any letter chip to hear its exact sound. Use these groups to master subtle Georgian phonetic contrasts!",
+                size=14, color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER
+            )
         )
 
         # Tab 1: Confusion Triads & Contrast Pairs
@@ -42,10 +51,6 @@ class PhoneticsGuideView(ft.Column):
             ("Dental Affricates (DZ/TS)", ["ძ", "ც", "წ"], "Voiced → Aspirated → Ejective"),
             ("Postalveolar Affricates (J/CH)", ["ჯ", "ჩ", "ჭ"], "Voiced → Aspirated → Ejective"),
             ("Gutturals & Throat Sounds", ["ღ", "ხ", "ჰ"], "Deep Voiced → Harsh Voiceless → Soft H"),
-        ]
-
-        pair_data = [
-            ("Voiced vs. Voiceless Pairs", [("ბ", "პ"), ("გ", "კ"), ("დ", "ტ"), ("ზ", "ს"), ("ჟ", "შ"), ("ძ", "ც"), ("ჯ", "ჩ"), ("ღ", "ხ")])
         ]
 
         # Tab 2: Sound Types (Aspirated, Ejectives, Gutturals)
@@ -71,49 +76,39 @@ class PhoneticsGuideView(ft.Column):
         sound_type_cards = [self._create_category_card(title, letters, desc, bg, fg) for title, letters, desc, bg, fg in sound_types]
         articulation_cards = [self._create_simple_card(title, letters) for title, letters in articulation_data]
 
-        tabs = ft.Tabs(
-            selected_index=0,
-            animation_duration=200,
-            tabs=[
-                ft.Tab(
-                    text="Confusion Groups",
-                    icon=ft.Icons.COMPARE_ARROWS_ROUNDED,
-                    content=ft.Column(controls=triad_cards, spacing=12, scroll=ft.ScrollMode.AUTO)
-                ),
-                ft.Tab(
-                    text="Sound Categories",
-                    icon=ft.Icons.RECORD_VOICE_OVER_ROUNDED,
-                    content=ft.Column(controls=sound_type_cards, spacing=12, scroll=ft.ScrollMode.AUTO)
-                ),
-                ft.Tab(
-                    text="Place of Articulation",
-                    icon=ft.Icons.ANALYTICS_ROUNDED,
-                    content=ft.Column(controls=articulation_cards, spacing=12, scroll=ft.ScrollMode.AUTO)
-                ),
-            ],
-            expand=True
+        # Tabs configured without height expansion conflicts
+        tabs = ft.Container(
+            width=650,
+            content=ft.Tabs(
+                selected_index=0,
+                animation_duration=200,
+                tabs=[
+                    ft.Tab(
+                        text="Confusion Groups",
+                        icon=ft.Icons.COMPARE_ARROWS_ROUNDED,
+                        content=ft.Column(controls=triad_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                    ),
+                    ft.Tab(
+                        text="Sound Categories",
+                        icon=ft.Icons.RECORD_VOICE_OVER_ROUNDED,
+                        content=ft.Column(controls=sound_type_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                    ),
+                    ft.Tab(
+                        text="Place of Articulation",
+                        icon=ft.Icons.ANALYTICS_ROUNDED,
+                        content=ft.Column(controls=articulation_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                    ),
+                ],
+            )
         )
 
-        layout = ft.Column(
-            controls=[
-                header,
-                intro_text,
-                ft.Container(height=5),
-                tabs
-            ],
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=10,
-            expand=True
-        )
-
-        main_wrapper = ft.Container(
-            content=layout,
-            padding=ft.padding.only(left=20, right=20, top=15, bottom=20),
-            alignment=ft.alignment.top_center,
-            expand=True
-        )
-
-        self.controls = [main_wrapper]
+        self.controls = [
+            ft.Container(height=10),
+            header,
+            intro_text,
+            tabs,
+            ft.Container(height=30)
+        ]
 
     def _play_sound(self, char: str):
         path = self.audio_map.get(char)
