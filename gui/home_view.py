@@ -51,7 +51,7 @@ class HomeView(ft.Column):
                         controls=[
                             ft.Container(
                                 content=ft.Icon(ft.Icons.SORT_BY_ALPHA_ROUNDED, size=26, color=ft.Colors.WHITE),
-                                bgcolor=ft.Colors.BLUE_600,
+                                bgcolor=ft.Colors.RED_700,
                                 width=48, height=48,
                                 border_radius=10,
                                 alignment=ft.alignment.center

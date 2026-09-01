@@ -10,11 +10,10 @@ from engine.lesson_engine import LessonSession
 
 # Import GUI Views
 from gui.home_view import HomeView
-from gui.alphabet_view import AlphabetPage
 from gui.units_view import UnitsView
 from gui.lessons_view import LessonsView
 from gui.session_view import SessionView
-#from gui.alphabet_view import AlphabetHubView, AnbanGameView
+from alphabet.alphabet_hub import AlphabetPage
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONTENT_DB_PATH = os.path.join(BASE_DIR, "database", "content_poolbook.db")
@@ -51,22 +50,22 @@ def main(page: ft.Page):
         home_view = HomeView(
             phases_summary=phases_summary,
             on_select_phase=show_units,
-            on_select_alphabet=show_alphabet_page,  
+            on_select_alphabet=load_alphabet_hub,  
             on_quick_review=lambda: show_session(phase=None, unit=None, lesson=None)
         )
         
         main_stage.content = home_view
         page.update()
 
-    def show_alphabet_page():
+    def load_alphabet_hub():
         """Loads and renders the alphabet hub into the main stage."""
         alphabet_view = AlphabetPage(
-            content_db=content_db,  
-            on_back=show_home   # Takes user back home
+            on_back_home=show_home  # Changed from 'on_back' to 'on_back_home'
         )
-        
-        main_stage.content = alphabet_view  # Swaps stage content instead of clearing page
+
+        main_stage.content = alphabet_view  # Swaps stage content seamlessly
         page.update()
+
 
     def show_units(phase_num: int):
         """Loads and renders the units page for a chosen phase."""
