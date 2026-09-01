@@ -71,10 +71,16 @@ class PhoneticsGuideView(ft.Column):
             ("Glottal (Vocal Cords)", ["ჰ"]),
         ]
 
+        # Tab 4: Voiced vs Voicless
+        pair_data = [("Voiced vs. Voiceless Pairs", [("ბ", "პ"), ("გ", "კ"), ("დ", "ტ"), ("ზ", "ს"), ("ჟ", "შ"), ("ძ", "ც"), ("ჯ", "ჩ"), ("ღ", "ხ")])]
+
+
         # Build UI Cards
         triad_cards = [self._create_group_card(title, letters, sub) for title, letters, sub in triad_data]
         sound_type_cards = [self._create_category_card(title, letters, desc, bg, fg) for title, letters, desc, bg, fg in sound_types]
         articulation_cards = [self._create_simple_card(title, letters) for title, letters in articulation_data]
+        pair_cards = [self._create_pairs_card(title, letters) for title, letters in pair_data]
+
 
         # Tabs configured without height expansion conflicts
         tabs = ft.Container(
@@ -97,6 +103,11 @@ class PhoneticsGuideView(ft.Column):
                         text="Place of Articulation",
                         icon=ft.Icons.ANALYTICS_ROUNDED,
                         content=ft.Column(controls=articulation_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                    ),
+                    ft.Tab(
+                        text="Voiced vs. Voiceless",
+                        icon=ft.Icons.SWAP_HORIZ_ROUNDED,
+                        content=ft.Column(controls=pair_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
                     ),
                 ],
             )
@@ -166,6 +177,52 @@ class PhoneticsGuideView(ft.Column):
                     ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
                     ft.Row(controls=chips, wrap=True, spacing=8)
                 ], spacing=6)
+            ),
+            width=650
+        )
+    
+    def _create_pairs_card(self, title: str, pairs: list):
+        pair_boxes = []
+        for voiced, voiceless in pairs:
+            v_chip = self._create_letter_chip(voiced, bg_color=ft.Colors.TEAL_100, text_color=ft.Colors.TEAL_900)
+            vl_chip = self._create_letter_chip(voiceless, bg_color=ft.Colors.INDIGO_100, text_color=ft.Colors.INDIGO_900)
+            
+            box = ft.Container(
+                padding=8,
+                bgcolor=ft.Colors.WHITE,
+                border_radius=12,
+                border=ft.border.all(1, ft.Colors.GREY_300),
+                content=ft.Row(
+                    controls=[
+                        v_chip,
+                        ft.Text("vs", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_500),
+                        vl_chip
+                    ],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=10
+                )
+            )
+            pair_boxes.append(box)
+
+        return ft.Card(
+            content=ft.Container(
+                padding=18,
+                content=ft.Column(
+                    controls=[
+                        ft.Text(title, size=17, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                        ft.Text("Teal = Voiced (vocal cords vibrate)  |  Indigo = Voiceless", size=12, color=ft.Colors.GREY_600, italic=True),
+                        ft.Container(height=6),
+                        ft.Row(
+                            controls=pair_boxes,
+                            wrap=True,
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            spacing=12,
+                            run_spacing=12
+                        )
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=8
+                )
             ),
             width=650
         )
