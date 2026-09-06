@@ -161,19 +161,66 @@ class AnbanGameView(ft.Column):
     def show_game_over(self):
         self.controls.clear()
         pct = int((self.score / self.total_questions) * 100) if self.total_questions > 0 else 0
-        self.controls = [
-            ft.Column(
+        pct_color = ft.Colors.GREEN_600 if pct >= 70 else ft.Colors.BLUE_700
+
+        play_again_btn = ft.ElevatedButton(
+            content=ft.Row(
                 [
-                    ft.Icon(ft.Icons.EMOJI_EVENTS_ROUNDED, size=90, color=ft.Colors.AMBER),
-                    ft.Text("QUIZ COMPLETE!", size=32, weight=ft.FontWeight.BOLD),
-                    ft.Text(f"Final Score: {self.score} / {self.total_questions}", size=24, weight=ft.FontWeight.BOLD),
-                    ft.Text(f"{pct}%", size=44, color=ft.Colors.BLUE, weight=ft.FontWeight.BOLD),
-                    ft.Container(height=20),
-                    ft.ElevatedButton("Play Again", size=20, on_click=lambda e: self.start_game()),
-                    ft.TextButton("Back to Alphabet Menu", size=20, on_click=lambda e: self.on_back_to_menu())
+                    ft.Icon(ft.Icons.REPLAY_ROUNDED, size=22),
+                    ft.Text("Play Again", size=16, weight=ft.FontWeight.BOLD),
                 ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                alignment=ft.MainAxisAlignment.CENTER
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=8
+            ),
+            width=220,
+            height=50,
+            style=ft.ButtonStyle(
+                bgcolor=ft.Colors.BLUE_600,
+                color=ft.Colors.WHITE,
+                shape=ft.RoundedRectangleBorder(radius=12),
+            ),
+            on_click=lambda e: self.start_game()
+        )
+
+        back_hub_btn = ft.OutlinedButton(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.GRID_VIEW_ROUNDED, size=20),
+                    ft.Text("Alphabet Hub", size=16, weight=ft.FontWeight.BOLD),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=8
+            ),
+            width=220,
+            height=50,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=12),
+            ),
+            on_click=lambda e: self.on_back_to_menu()
+        )
+
+        self.controls = [
+            ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Icon(ft.Icons.EMOJI_EVENTS_ROUNDED, size=90, color=ft.Colors.AMBER_600),
+                        ft.Text("QUIZ COMPLETE!", size=28, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                        ft.Text(f"Final Score: {self.score} / {self.total_questions}", size=20, weight=ft.FontWeight.W_600, color=ft.Colors.GREY_800),
+                        ft.Text(f"{pct}%", size=48, color=pct_color, weight=ft.FontWeight.BOLD),
+                        ft.Container(height=15),
+                        ft.Row(
+                            [play_again_btn, back_hub_btn],
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            spacing=15
+                        )
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=8
+                ),
+                alignment=ft.alignment.top_center,  # Shifted from center to top_center
+                padding=ft.padding.only(top=-100),     # Adjust this number to raise/lower
+                expand=True
             )
         ]
         if self.page:
