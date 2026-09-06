@@ -37,10 +37,12 @@ class WaveGenerator:
                     
                 # AUTOMATIC PAIR DETECTOR:
                 # If this monologue item is ALSO a prompt in convo_pairs, grab its pair data too!
-                pair_data = self.content_db.get_convo_pair_details(assoc_id)
-                if pair_data:
-                    convo_pairs.append((step_order, assoc_id, pair_data))
-
+                # Block for Phase 0 to prevent alphabet/example word matching games
+                if phase_num != 0:
+                    pair_data = self.content_db.get_convo_pair_details(assoc_id)
+                    if pair_data:
+                        convo_pairs.append((step_order, assoc_id, pair_data))
+                        
             elif comp_type == 'convo_pair':
                 pair_data = self.content_db.get_convo_pair_details(assoc_id)
                 if pair_data:

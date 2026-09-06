@@ -541,14 +541,28 @@ class ContentDBManager:
         
         # 2. Strict Type-Matching Filters
         if any(keyword in combined_type_info for keyword in ('letter', 'alphabet')):
-            type_filter = "(t.name LIKE '%letter%' OR t.name LIKE '%alphabet%' OR c.type_id LIKE '%letter%' OR c.type_id LIKE '%alphabet%')"
+            type_filter = """
+                (t.name LIKE '%letter%' OR t.name LIKE '%alphabet%' OR c.type_id LIKE '%letter%' OR c.type_id LIKE '%alphabet%')
+            """
         elif 'phrase' in combined_type_info:
-            type_filter = "(t.name LIKE '%phrase%' OR c.type_id LIKE '%phrase%')"
+            type_filter = """
+                (t.name LIKE '%phrase%' OR c.type_id LIKE '%phrase%')
+                AND c.content_id NOT IN (
+                    SELECT ct.content_id FROM content_tags ct 
+                    JOIN tags tg ON ct.tag_id = tg.tag_id 
+                    WHERE tg.name = 'alphabet'
+                )
+            """
         else:
-            # Standard words: strictly exclude letters and phrases
+            # Standard words: strictly exclude letters and alphabet tags
             type_filter = """
                 (t.name NOT LIKE '%letter%' AND t.name NOT LIKE '%alphabet%' AND t.name NOT LIKE '%phrase%' OR t.name IS NULL) AND
-                (c.type_id NOT LIKE '%letter%' AND c.type_id NOT LIKE '%alphabet%' AND c.type_id NOT LIKE '%phrase%' OR c.type_id IS NULL)
+                (c.type_id NOT LIKE '%letter%' AND c.type_id NOT LIKE '%alphabet%' AND c.type_id NOT LIKE '%phrase%' OR c.type_id IS NULL) AND
+                c.content_id NOT IN (
+                    SELECT ct.content_id FROM content_tags ct 
+                    JOIN tags tg ON ct.tag_id = tg.tag_id 
+                    WHERE tg.name = 'alphabet'
+                )
             """
 
         # Helper to fetch tiers dynamically with exclusions
@@ -636,9 +650,18 @@ class ContentDBManager:
                     if len(distractors) >= limit:
                         break
 
+        # Globally applied alphabet block for conversational distractors
+        alphabet_block = """
+            AND c.content_id NOT IN (
+                SELECT ct.content_id FROM content_tags ct 
+                JOIN tags tg ON ct.tag_id = tg.tag_id 
+                WHERE tg.name = 'alphabet'
+            )
+        """
+
         # Tier 1: Same Unit with 'response' tags
         if lesson_id and len(distractors) < limit:
-            q1 = """
+            q1 = f"""
                 SELECT DISTINCT c.georgian, c.english, c.transliteration 
                 FROM content c
                 JOIN content_tags ct ON c.content_id = ct.content_id
@@ -647,27 +670,30 @@ class ContentDBManager:
                 JOIN lessons l ON lc.lesson_id = l.lesson_id
                 WHERE t.name = 'response' 
                   AND l.unit_id = (SELECT unit_id FROM lessons WHERE lesson_id = ?)
+                  {alphabet_block}
             """
             fetch_tier(q1, (lesson_id,), limit - len(distractors))
 
         # Tier 2: Global conversational alternatives fallback ('response' tag)
         if len(distractors) < limit:
-            q2 = """
+            q2 = f"""
                 SELECT DISTINCT c.georgian, c.english, c.transliteration 
                 FROM content c
                 JOIN content_tags ct ON c.content_id = ct.content_id
                 JOIN tags t ON ct.tag_id = t.tag_id
                 WHERE t.name = 'response'
+                {alphabet_block}
             """
             fetch_tier(q2, (), limit - len(distractors))
 
         # Tier 3: General Phrase Fallback (Failsafe if database runs low on 'response' tags)
         if len(distractors) < limit:
-            q3 = """
+            q3 = f"""
                 SELECT DISTINCT c.georgian, c.english, c.transliteration 
                 FROM content c
                 LEFT JOIN types t ON c.type_id = t.type_id
                 WHERE LOWER(t.name) = 'phrase'
+                {alphabet_block}
             """
             fetch_tier(q3, (), limit - len(distractors))
 
@@ -693,6 +719,7 @@ class ContentDBManager:
             JOIN content r ON cp.response_content_id = r.content_id
             JOIN lesson_contents lc ON cp.prompt_content_id = lc.associated_id
             WHERE lc.lesson_id = ?
+                AND (pt.name IS NULL OR pt.name NOT LIKE '%letter%')
             ORDER BY RANDOM() LIMIT 1;
         """
         cursor.execute(query, (lesson_id,))
