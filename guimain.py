@@ -7,6 +7,7 @@ from engine.db_managers import ContentDBManager, ProgressDBManager
 # Import Engine Runners
 from engine.review_engine import ReviewSession
 from engine.lesson_engine import LessonSession
+from engine.passive_review import PassiveReviewEngine
 
 # Import GUI Views
 from gui.home_view import HomeView
@@ -14,6 +15,8 @@ from gui.units_view import UnitsView
 from gui.lessons_view import LessonsView
 from gui.session_view import SessionView
 from gui.fun_facts_view import FunFactsView
+from gui.passive_rev_view import PassiveReviewView
+from gui.audio_utils import play_audio_file
 from alphabet.alphabet_hub import AlphabetPage
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -97,6 +100,33 @@ def main(page: ft.Page):
         main_stage.content = units_view
         page.update()
 
+    passive_engine = PassiveReviewEngine(content_db)
+
+    def handle_passive_read(phase_num: int, unit_num: int):
+        # 1. Ask the engine to build the master dictionary for this unit
+        master_sheet = passive_engine.build_unit_master_sheet(phase_num, unit_num)
+        unit_title = f"Phase {phase_num} - Unit {unit_num}"
+        
+        # 2. Define the back navigation
+        def go_back(e):
+            page.views.pop()
+            page.update()
+
+        # 3. Define the audio playback using your existing utility
+        def play_audio(raw_path):
+            play_audio_file(page, raw_path)
+
+        # 4. Create the view and push it to the screen
+        review_view = PassiveReviewView(
+            master_sheet=master_sheet,
+            unit_title=unit_title,
+            on_back=go_back,
+            play_audio=play_audio 
+        )
+        
+        page.views.append(review_view)
+        page.update()
+
     def show_lessons(phase_num: int, unit_num: int):
         """Loads and renders the individual interactive lessons page for a unit."""
         completed_ids = progress_db.get_completed_lesson_ids()
@@ -112,7 +142,7 @@ def main(page: ft.Page):
             unit_title=unit_title,
             lessons_list=lessons_list,
             on_select_lesson=lambda p, u, l: show_session(phase=p, unit=u, lesson=l),
-            on_passive_read=lambda p, u: print(f"Opening passive read for Phase {p}, Unit {u}"),
+            on_passive_read=handle_passive_read,
             on_unit_review=lambda p, u: show_session(phase=p, unit=u, lesson=None),
             on_back=lambda: show_units(phase_num),
             on_home=show_home
