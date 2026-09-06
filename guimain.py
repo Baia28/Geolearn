@@ -13,6 +13,7 @@ from gui.home_view import HomeView
 from gui.units_view import UnitsView
 from gui.lessons_view import LessonsView
 from gui.session_view import SessionView
+from gui.fun_facts_view import FunFactsView
 from alphabet.alphabet_hub import AlphabetPage
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +52,7 @@ def main(page: ft.Page):
             phases_summary=phases_summary,
             on_select_phase=show_units,
             on_select_alphabet=load_alphabet_hub,  
+            on_open_fun_facts=show_fun_facts,
             on_quick_review=lambda: show_session(phase=None, unit=None, lesson=None)
         )
         
@@ -66,6 +68,13 @@ def main(page: ft.Page):
         main_stage.content = alphabet_view  # Swaps stage content seamlessly
         page.update()
 
+    def show_fun_facts(e=None):
+        def go_back(e):
+            page.views.pop()
+            page.update()
+
+        page.views.append(FunFactsView(on_back=go_back))
+        page.update()
 
     def show_units(phase_num: int):
         """Loads and renders the units page for a chosen phase."""

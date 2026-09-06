@@ -6,13 +6,15 @@ class HomeView(ft.Column):
         phases_summary: list, 
         on_select_phase: callable, 
         on_select_alphabet: callable,
-        on_quick_review: callable
+        on_quick_review: callable,
+        on_open_fun_facts: callable = None  # 1. Add the parameter here
     ):
         super().__init__()
         self.phases_summary = phases_summary
         self.on_select_phase = on_select_phase
         self.on_select_alphabet = on_select_alphabet
         self.on_quick_review = on_quick_review
+        self.on_open_fun_facts = on_open_fun_facts
         
         self.expand = True
         self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
@@ -166,27 +168,28 @@ class HomeView(ft.Column):
                 elevation=1
             ),
             
-            # Fun Facts & Culture (Placeholder)
+            # Fun Facts & Culture (Active Button)
             ft.Card(
                 content=ft.Container(
-                    padding=15,
-                    opacity=0.6,
-                    content=ft.Column(
-                        controls=[
-                            ft.Row(
-                                controls=[
-                                    ft.Icon(ft.Icons.LIGHTBULB_OUTLINE, color=ft.Colors.PURPLE_400, size=20),
-                                    ft.Text("Culture & Fun Facts", size=14, weight=ft.FontWeight.BOLD),
-                                ],
-                                spacing=8
-                            ),
-                            ft.Text("Discover Georgian history, food, and traditions.", size=11, color=ft.Colors.GREY_600),
-                        ],
-                        spacing=5
-                    )
-                ),
-                elevation=0
+                padding=15,
+                ink=True,
+                on_click=self.on_open_fun_facts,  # Triggers the navigation
+                content=ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Icon(ft.Icons.LIGHTBULB_OUTLINE, color=ft.Colors.PURPLE_600, size=20),
+                                ft.Text("Culture & Fun Facts", size=14, weight=ft.FontWeight.BOLD),
+                            ],
+                            spacing=8
+                        ),
+                        ft.Text("Discover Georgian history, food, and traditions.", size=11, color=ft.Colors.GREY_600),
+                    ],
+                    spacing=5
+                )
             ),
+            elevation=2
+        )
         ]
 
         sidebar_column = ft.Column(controls=sidebar_controls, spacing=10, width=280)
