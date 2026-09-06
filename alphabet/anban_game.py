@@ -56,7 +56,14 @@ class AnbanGameView(ft.Column):
             size=14, color=ft.Colors.GREY_600
         )
         feedback_text = ft.Text("", size=18, weight=ft.FontWeight.BOLD)
-        next_btn = ft.ElevatedButton("Next Question →", on_click=lambda e: self.play_round(), disabled=True)
+        next_btn = ft.ElevatedButton(
+            "Next Question →", 
+            width=350, 
+            height=48, 
+            bgcolor=ft.Colors.BLUE_600,
+            color=ft.Colors.WHITE, 
+            on_click=lambda e: self.play_round(), 
+            disabled=True)
         options_row = ft.Row(wrap=True, alignment=ft.MainAxisAlignment.CENTER, spacing=15)
 
         def check_answer(selected_geo: str, clicked_btn: ft.Container):
@@ -72,6 +79,8 @@ class AnbanGameView(ft.Column):
                 clicked_btn.content.color = ft.Colors.WHITE
                 feedback_text.value = f"❌ Incorrect! It was {correct_geo}"
                 feedback_text.color = ft.Colors.RED
+                play_audio_file(self.page, letter_audio)
+                
             else:
                 self.score += 1
                 score_text.value = f"Score: {self.score}"
@@ -110,7 +119,7 @@ class AnbanGameView(ft.Column):
                 ),
                 progress_text,
                 ft.Container(height=10),
-                ft.Text("Which letter matches this image?", size=18, weight=ft.FontWeight.W_500),
+                ft.Text("Which letter does the image below belong to?", size=18, weight=ft.FontWeight.W_500),  #lil more vague: Which letter goes with the image below?
                 ft.Container(height=10),
                 ft.Image(src=ex_image or "", width=180, height=180, fit=ft.ImageFit.CONTAIN),
                 ft.Container(height=15),

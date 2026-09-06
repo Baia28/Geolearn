@@ -105,7 +105,7 @@ class AlphabetPage(ft.Column):
                         ft.Column(
                             controls=[
                                 ft.Text("Anban Game", size=18, weight=ft.FontWeight.BOLD),
-                                ft.Text("Visual matching practice: match pictures from Gallery to letters", size=13, color=ft.Colors.GREY_600),
+                                ft.Text("Mnemonic Word Practice: Associate vocabulary images with Georgian letters", size=13, color=ft.Colors.GREY_600),
                             ],
                             spacing=4,
                             expand=True
