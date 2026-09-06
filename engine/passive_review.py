@@ -5,7 +5,6 @@ class PassiveReviewEngine:
         self.db = db_manager
 
     def build_unit_master_sheet(self, phase_num: int, unit_num: int):
-        """Builds a structured dictionary of all content within a specific unit."""
         conn = sqlite3.connect(self.db.db_path)
         cursor = conn.cursor()
         
@@ -19,24 +18,37 @@ class PassiveReviewEngine:
             ORDER BY l.sequence_order ASC
         """, (phase_num, unit_num))
         lessons = cursor.fetchall()
-        conn.close()
 
-        # Data structure: { lesson_num: {'vocab': [], 'pairs': [], 'dialogues': []} }
+        # Data structure initialization
         master_sheet = {}
 
         for lesson_id, lesson_num in lessons:
-            master_sheet[lesson_num] = {'vocab': [], 'pairs': [], 'dialogues': []}
+            master_sheet[lesson_num] = {'vocab': [], 'phrases': [], 'pairs': [], 'dialogues': []}
             raw_steps = self.db.get_lesson_structure(lesson_id)
 
             for _, comp_type, assoc_id in raw_steps:
                 if comp_type == 'monologue':
+                    # Explicitly check the database 'type' (word vs phrase)
+                    cursor.execute("""
+                        SELECT t.name 
+                        FROM content c
+                        JOIN types t ON c.type_id = t.type_id
+                        WHERE c.content_id = ?
+                    """, (assoc_id,))
+                    type_res = cursor.fetchone()
+                    db_content_type = type_res[0].lower() if type_res else 'word'
+
                     word_data = self.db.get_word_details(assoc_id)
                     if word_data:
-                        # (id, geo, eng, trans, image, audio)
-                        master_sheet[lesson_num]['vocab'].append({
+                        item = {
                             'geo': word_data[1], 'eng': word_data[2], 
                             'trans': word_data[3], 'audio': word_data[5]
-                        })
+                        }
+                        # Route based on the exact database type mapping
+                        if db_content_type == 'phrase':
+                            master_sheet[lesson_num]['phrases'].append(item)
+                        else:
+                            master_sheet[lesson_num]['vocab'].append(item)
                 
                 elif comp_type == 'convo_pair':
                     pair_data = self.db.get_convo_pair_details(assoc_id)
@@ -48,4 +60,5 @@ class PassiveReviewEngine:
                     if lines:
                         master_sheet[lesson_num]['dialogues'].append(lines)
 
+        conn.close()
         return master_sheet
