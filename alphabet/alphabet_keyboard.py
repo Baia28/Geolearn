@@ -172,13 +172,16 @@ class AlphabetKeyboardView(ft.Column):
         self.controls.clear()
 
         # Header
-        header = ft.Row(
-            controls=[
-                ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                ft.Text("Georgian Keyboard Practice", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                ft.Container(width=40)
-            ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+        header = ft.Container(
+            width=650,
+            content=ft.Row(
+                controls=[
+                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
+                    ft.Text("Georgian Keyboard Practice", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                    ft.Container(width=48)  # Equal spacer width matching back icon button size
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+            )
         )
 
         # Output Typing Field

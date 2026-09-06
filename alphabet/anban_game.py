@@ -80,7 +80,7 @@ class AnbanGameView(ft.Column):
                 feedback_text.value = f"❌ Incorrect! It was {correct_geo}"
                 feedback_text.color = ft.Colors.RED
                 play_audio_file(self.page, letter_audio)
-                
+
             else:
                 self.score += 1
                 score_text.value = f"Score: {self.score}"
@@ -107,34 +107,54 @@ class AnbanGameView(ft.Column):
             btn.on_click = lambda e, val=opt, b=btn: check_answer(val, b)
             options_row.controls.append(btn)
 
-        game_layout = ft.Column(
-            controls=[
-                ft.Row(
-                    [
-                        ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                        score_text,
-                        ft.Container(width=40)
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN
-                ),
-                progress_text,
-                ft.Container(height=10),
-                ft.Text("Which letter does the image below belong to?", size=18, weight=ft.FontWeight.W_500),  #lil more vague: Which letter goes with the image below?
-                ft.Container(height=10),
-                ft.Image(src=ex_image or "", width=180, height=180, fit=ft.ImageFit.CONTAIN),
-                ft.Container(height=15),
-                options_row,
-                ft.Container(height=10),
-                feedback_text,
-                ft.Container(height=10),
-                next_btn
-            ],
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            scroll=ft.ScrollMode.AUTO,
+        # Standardized Header
+        header = ft.Container(
+            width=650,
+            content=ft.Row(
+                controls=[
+                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
+                    ft.Text("Anbani Associations", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                    score_text
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+            )
+        )
+
+        game_layout = ft.Container(
+            width=650,
+            content=ft.Column(
+                controls=[
+                    header,
+                    progress_text,
+                    ft.Container(height=10),
+                    ft.Text("Which letter goes with the image below?", size=18, weight=ft.FontWeight.W_500, color=ft.Colors.GREY_800), # orrr Which letter does the image below belong to               
+                    ft.Container(height=10),
+                    ft.Image(src=ex_image or "", width=180, height=180, fit=ft.ImageFit.CONTAIN),
+                    ft.Container(height=15),
+                    options_row,
+                    ft.Container(height=10),
+                    feedback_text,
+                    ft.Container(height=10),
+                    next_btn
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=6
+            )
+        )
+
+        main_wrapper = ft.Container(
+            content=ft.Column(
+                controls=[game_layout],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                scroll=ft.ScrollMode.AUTO,
+                expand=True
+            ),
+            padding=ft.padding.only(top=10, bottom=20),
+            alignment=ft.alignment.top_center,
             expand=True
         )
 
-        self.controls = [game_layout]
+        self.controls = [main_wrapper]
         if self.page:
             self.update()
 
@@ -149,8 +169,8 @@ class AnbanGameView(ft.Column):
                     ft.Text(f"Final Score: {self.score} / {self.total_questions}", size=24, weight=ft.FontWeight.BOLD),
                     ft.Text(f"{pct}%", size=44, color=ft.Colors.BLUE, weight=ft.FontWeight.BOLD),
                     ft.Container(height=20),
-                    ft.ElevatedButton("Play Again", on_click=lambda e: self.start_game()),
-                    ft.TextButton("Back to Alphabet Menu", on_click=lambda e: self.on_back_to_menu())
+                    ft.ElevatedButton("Play Again", size=20, on_click=lambda e: self.start_game()),
+                    ft.TextButton("Back to Alphabet Menu", size=20, on_click=lambda e: self.on_back_to_menu())
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER

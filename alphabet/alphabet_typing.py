@@ -120,37 +120,49 @@ class AlphabetTypingGameView(ft.Column):
             on_click=lambda e: self.play_round()
         )
 
-        game_layout = ft.Column(
-            controls=[
-                ft.Row(
-                    [
-                        ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                        score_text,
-                        ft.Container(width=40)
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN
-                ),
-                progress_text,
-                ft.Container(height=5),
-                instruction_ui,
-                ft.Container(height=5),
-                prompt_ui,
-                self.input_field,
-                self.feedback_container,
-                self.keyboard,
-                ft.Container(height=5),
-                self.submit_btn,
-                self.next_btn
-            ],
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=10,
-            scroll=ft.ScrollMode.AUTO,
-            expand=True
+        # Standardized Header
+        header = ft.Container(
+            width=650,
+            content=ft.Row(
+                controls=[
+                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
+                    ft.Text("Listen & Type", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                    score_text
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+            )
+        )
+
+        game_layout = ft.Container(
+            width=650,
+            content=ft.Column(
+                controls=[
+                    header,
+                    progress_text,
+                    ft.Container(height=5),
+                    instruction_ui,
+                    ft.Container(height=5),
+                    prompt_ui,
+                    self.input_field,
+                    self.feedback_container,
+                    self.keyboard,
+                    ft.Container(height=5),
+                    self.submit_btn,
+                    self.next_btn
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8
+            )
         )
 
         main_wrapper = ft.Container(
-            content=game_layout,
-            padding=ft.padding.only(left=30, right=30, top=10, bottom=20),
+            content=ft.Column(
+                controls=[game_layout],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                scroll=ft.ScrollMode.AUTO,
+                expand=True
+            ),
+            padding=ft.padding.only(top=10, bottom=20),
             alignment=ft.alignment.top_center,
             expand=True
         )
@@ -158,7 +170,12 @@ class AlphabetTypingGameView(ft.Column):
         self.controls = [main_wrapper]
         if self.page:
             self.update()
-            self.trigger_audio()
+
+        # Auto-play target audio as soon as the question loads
+        self.trigger_audio()
+
+        if self.page:
+            self.update()
 
     def trigger_audio(self):
         """Plays current letter audio dictation."""

@@ -89,32 +89,36 @@ class AlphabetGalleryView(ft.Column):
         image_icon = ft.Icons.IMAGE_ROUNDED if self.show_images else ft.Icons.HIDE_IMAGE_ROUNDED
         image_color = ft.Colors.RED_600 if self.show_images else ft.Colors.GREY_500
 
-        header = ft.Row(
-            controls=[
-                ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                ft.Text("Georgian Alphabet (33 Letters)", size=28, weight=ft.FontWeight.BOLD),
-                ft.Row(
-                    controls=[
-                        ft.IconButton(
-                            icon=image_icon,
-                            icon_color=image_color,
-                            icon_size=28,
-                            tooltip="Toggle Illustration Images",
-                            on_click=self.toggle_images
-                        ),
-                        ft.IconButton(
-                            icon=sound_icon, 
-                            icon_color=sound_color, 
-                            icon_size=28,
-                            tooltip="Toggle Hover Sound",
-                            on_click=self.toggle_sound
-                        )
-                    ],
-                    spacing=4
-                )
-            ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+        header = ft.Container(
+            width=650,
+            content=ft.Row(
+                controls=[
+                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
+                    ft.Text("Georgian Alphabet (33 Letters)", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                    ft.Row(
+                        controls=[
+                            ft.IconButton(
+                                icon=image_icon,
+                                icon_color=image_color,
+                                icon_size=28,
+                                tooltip="Toggle Illustration Images",
+                                on_click=self.toggle_images
+                            ),
+                            ft.IconButton(
+                                icon=sound_icon, 
+                                icon_color=sound_color, 
+                                icon_size=28,
+                                tooltip="Toggle Hover Sound",
+                                on_click=self.toggle_sound
+                            )
+                        ],
+                        spacing=0
+                    )
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+            )
         )
+
         grid_layout = ft.Column(
             controls=[
                 header,

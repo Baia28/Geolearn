@@ -29,7 +29,7 @@ class PhoneticsGuideView(ft.Column):
                 controls=[
                     ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
                     ft.Text("Phonetics & Sound Groups", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                    ft.Container(width=40)
+                    ft.Container(width=48)
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN
             )
