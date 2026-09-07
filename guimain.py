@@ -56,7 +56,9 @@ def main(page: ft.Page):
             on_select_phase=show_units,
             on_select_alphabet=load_alphabet_hub,  
             on_open_fun_facts=show_fun_facts,
-            on_quick_review=lambda: show_session(phase=None, unit=None, lesson=None)
+            on_quick_review=lambda: show_session(phase=None, unit=None, lesson=None),
+
+            on_global_passive_review=show_global_passive_review
         )
         
         main_stage.content = home_view
@@ -98,6 +100,27 @@ def main(page: ft.Page):
         )
         
         main_stage.content = units_view
+        page.update()
+
+    def show_global_passive_review():
+        completed_ids = progress_db.get_completed_lesson_ids()
+        master_sheet = passive_engine.build_global_master_sheet(completed_ids)
+        
+        def go_back(e):
+            page.views.pop()
+            page.update()
+
+        def play_audio(raw_path):
+            play_audio_file(page, raw_path)
+
+        review_view = PassiveReviewView(
+            master_sheet=master_sheet,
+            unit_title="All Completed Content",
+            on_back=go_back,
+            play_audio=play_audio 
+        )
+        
+        page.views.append(review_view)
         page.update()
 
     passive_engine = PassiveReviewEngine(content_db)

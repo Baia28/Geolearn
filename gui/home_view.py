@@ -7,7 +7,8 @@ class HomeView(ft.Column):
         on_select_phase: callable, 
         on_select_alphabet: callable,
         on_quick_review: callable,
-        on_open_fun_facts: callable = None  # 1. Add the parameter here
+        on_open_fun_facts: callable = None,  # 1. Add the parameter here
+        on_global_passive_review: callable = None
     ):
         super().__init__()
         self.phases_summary = phases_summary
@@ -15,6 +16,7 @@ class HomeView(ft.Column):
         self.on_select_alphabet = on_select_alphabet
         self.on_quick_review = on_quick_review
         self.on_open_fun_facts = on_open_fun_facts
+        self.on_global_passive_review = on_global_passive_review
         
         self.expand = True
         self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
@@ -128,44 +130,46 @@ class HomeView(ft.Column):
             ft.Card(
                 content=ft.Container(
                     padding=15,
+                    ink=True,
                     on_click=lambda e: self.on_quick_review(),
                     content=ft.Column(
                         controls=[
                             ft.Row(
                                 controls=[
-                                    ft.Icon(ft.Icons.FLASH_ON, color=ft.Colors.AMBER_700, size=20),
-                                    ft.Text("Quick SRS Review", size=14, weight=ft.FontWeight.BOLD),
+                                    ft.Icon(ft.Icons.PSYCHOLOGY, color=ft.Colors.BLUE_600, size=20),
+                                    ft.Text("Active Review", size=14, weight=ft.FontWeight.BOLD),
                                 ],
                                 spacing=8
                             ),
-                            ft.Text("Review at least 15 due words based on memory decay.", size=11, color=ft.Colors.GREY_600),
+                            ft.Text("Test your memory with an adaptive quiz of your past lessons.", size=11, color=ft.Colors.GREY_600),
                         ],
                         spacing=5
                     )
                 ),
-                elevation=1
+                elevation=2
             ),
             
             # Passive Reading Hub
             ft.Card(
                 content=ft.Container(
                     padding=15,
-                    on_click=lambda e: print("Passive Reading selected"),
+                    ink=True,
+                    on_click=lambda e: self.on_global_passive_review() if self.on_global_passive_review else None,
                     content=ft.Column(
                         controls=[
                             ft.Row(
                                 controls=[
-                                    ft.Icon(ft.Icons.MENU_BOOK, color=ft.Colors.TEAL_600, size=20),
-                                    ft.Text("Passive Reading", size=14, weight=ft.FontWeight.BOLD),
+                                    ft.Icon(ft.Icons.LOCAL_LIBRARY, color=ft.Colors.TEAL_600, size=20),
+                                    ft.Text("Memory Library", size=14, weight=ft.FontWeight.BOLD),
                                 ],
                                 spacing=8
                             ),
-                            ft.Text("Read full dialogues with side-by-side translations.", size=11, color=ft.Colors.GREY_600),
+                            ft.Text("Browse your completed vocabulary, phrases, and dialogues stress-free.", size=11, color=ft.Colors.GREY_600),
                         ],
                         spacing=5
                     )
                 ),
-                elevation=1
+                elevation=2
             ),
             
             # Fun Facts & Culture (Active Button)

@@ -17,9 +17,8 @@ class PassiveReviewView(ft.View):
         phrases_list = ft.ListView(expand=1, spacing=15, padding=20)
         dialogues_list = ft.ListView(expand=1, spacing=15, padding=20)
 
-        for lesson_num, content in master_sheet.items():
-            lesson_header = ft.Text(f"Lesson {lesson_num}", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800)
-            
+        for section_label, content in master_sheet.items():
+            lesson_header = ft.Text(section_label, size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800)
             # --- Vocabulary (Single Words) ---
             if content['vocab']:
                 vocab_list.controls.append(lesson_header)
@@ -43,8 +42,7 @@ class PassiveReviewView(ft.View):
             
             # --- Phrases & Pairs ---
             if content['phrases'] or content['pairs']:
-                phrases_list.controls.append(ft.Text(f"Lesson {lesson_num}", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800))
-                
+                phrases_list.controls.append(ft.Text(section_label, size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800))                
                 # Render Standalone Phrases
                 for item in content['phrases']:
                     audio_btn = ft.IconButton(
@@ -83,7 +81,7 @@ class PassiveReviewView(ft.View):
             
             # --- Dialogues ---
             if content['dialogues']:
-                dialogues_list.controls.append(ft.Text(f"Lesson {lesson_num}", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800))
+                dialogues_list.controls.append(ft.Text(section_label, size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800))
                 for idx, lines in enumerate(content['dialogues']):
                     col = ft.Column(spacing=5)
                     col.controls.append(ft.Text(f"Dialogue {idx + 1}", weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_600))
