@@ -140,7 +140,7 @@ class LessonsView(ft.Column):
                     on_click=lambda e: self.on_passive_read(self.phase_num, self.unit_num),
                     content=ft.Column(
                         controls=[
-                            ft.Row([ft.Icon(ft.Icons.MENU_BOOK, color=ft.Colors.TEAL_600), ft.Text("Passive Read", weight=ft.FontWeight.BOLD)]),
+                            ft.Row([ft.Icon(ft.Icons.MENU_BOOK, color=ft.Colors.TEAL_600), ft.Text("Unit Materials", weight=ft.FontWeight.BOLD)]),
                             ft.Text("Read full unit dialogues with dual scripts and translations.", size=11, color=ft.Colors.GREY_600)
                         ],
                         spacing=5
