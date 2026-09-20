@@ -132,7 +132,7 @@ def main(page: ft.Page):
 
         review_view = PassiveReviewView(
             master_sheet=master_sheet,
-            unit_title="All Completed Content",
+            unit_title="Your Learning Path",
             on_back=go_back,
             play_audio=play_audio 
         )

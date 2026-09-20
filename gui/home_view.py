@@ -164,7 +164,7 @@ class HomeView(ft.Column):
                                 ],
                                 spacing=8
                             ),
-                            ft.Text("Browse your completed vocabulary, phrases, and dialogues stress-free.", size=11, color=ft.Colors.GREY_600),
+                            ft.Text("Review unlocked material and see what to complete next.", size=11, color=ft.Colors.GREY_600),
                         ],
                         spacing=5
                     )

@@ -124,8 +124,8 @@ class LessonsView(ft.Column):
                     on_click=lambda e: self.on_unit_review(self.phase_num, self.unit_num),
                     content=ft.Column(
                         controls=[
-                            ft.Row([ft.Icon(ft.Icons.REPLAY, color=ft.Colors.AMBER_700), ft.Text("Unit Review", weight=ft.FontWeight.BOLD)]),
-                            ft.Text("Review at least 12 vocabulary items from this unit.", size=11, color=ft.Colors.GREY_600)
+                            ft.Row([ft.Icon(ft.Icons.REPLAY, color=ft.Colors.AMBER_700), ft.Text("Practice Review", weight=ft.FontWeight.BOLD)]),
+                            ft.Text("Test your memory with an adaptive review of this unit.", size=11, color=ft.Colors.GREY_600)
                         ],
                         spacing=5
                     )
@@ -140,8 +140,8 @@ class LessonsView(ft.Column):
                     on_click=lambda e: self.on_passive_read(self.phase_num, self.unit_num),
                     content=ft.Column(
                         controls=[
-                            ft.Row([ft.Icon(ft.Icons.MENU_BOOK, color=ft.Colors.TEAL_600), ft.Text("Unit Materials", weight=ft.FontWeight.BOLD)]),
-                            ft.Text("Read full unit dialogues with dual scripts and translations.", size=11, color=ft.Colors.GREY_600)
+                            ft.Row([ft.Icon(ft.Icons.MENU_BOOK, color=ft.Colors.TEAL_600), ft.Text("Reference Materials", weight=ft.FontWeight.BOLD)]),
+                            ft.Text("Browse this unit's vocabulary, phrases, and dialogues at your own pace.", size=11, color=ft.Colors.GREY_600)
                         ],
                         spacing=5
                     )
