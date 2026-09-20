@@ -1,3 +1,5 @@
+"""Build read-only vocabulary, phrase, pair, and dialogue review sheets."""
+
 import sqlite3
 
 class PassiveReviewEngine:
@@ -8,7 +10,6 @@ class PassiveReviewEngine:
         conn = sqlite3.connect(self.db.db_path)
         cursor = conn.cursor()
         
-        # 1. Fetch all lessons for this Phase and Unit
         cursor.execute("""
             SELECT l.lesson_id, l.sequence_order 
             FROM lessons l
@@ -19,7 +20,6 @@ class PassiveReviewEngine:
         """, (phase_num, unit_num))
         lessons = cursor.fetchall()
 
-        # Data structure initialization
         master_sheet = {}
 
         for lesson_id, lesson_num in lessons:
@@ -28,7 +28,6 @@ class PassiveReviewEngine:
 
             for _, comp_type, assoc_id in raw_steps:
                 if comp_type == 'monologue':
-                    # Explicitly check the database 'type' (word vs phrase)
                     cursor.execute("""
                         SELECT t.name 
                         FROM content c
@@ -44,7 +43,6 @@ class PassiveReviewEngine:
                             'geo': word_data[1], 'eng': word_data[2], 
                             'trans': word_data[3], 'audio': word_data[5]
                         }
-                        # Route based on the exact database type mapping
                         if db_content_type == 'phrase':
                             master_sheet[lesson_num]['phrases'].append(item)
                         else:
@@ -84,7 +82,6 @@ class PassiveReviewEngine:
         master_sheet = {}
 
         for lesson_id, phase_num, unit_num, lesson_num in lessons:
-            # Create a clear global label
             label = f"Phase {phase_num} • Unit {unit_num} • Lesson {lesson_num}"
             master_sheet[label] = {'vocab': [], 'phrases': [], 'pairs': [], 'dialogues': []}
             
@@ -119,5 +116,4 @@ class PassiveReviewEngine:
                         master_sheet[label]['dialogues'].append(lines)
         
         conn.close()
-        # Clean out empty labels before returning
         return {k: v for k, v in master_sheet.items() if any(v.values())}

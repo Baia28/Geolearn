@@ -1,8 +1,9 @@
+"""Flet view that presents and advances exercises from a study-session engine."""
+
 import flet as ft
 from engine.lesson_engine import LessonSession
 from engine.review_engine import ReviewSession
 
-# Import our custom UI components from the gui/ folder
 from gui.receptive import MultipleChoiceCard
 from gui.production import TypeGeorgian, MatchMatrix3x3
 from gui.dialogues import DialoguePassiveView, LiveDialogueView
@@ -25,20 +26,14 @@ class SessionView(ft.Column):
         self.expand = True
         self.scroll = ft.ScrollMode.AUTO
         
-        # Initialize the Core Engine
-        
-        # Setup Static UI Elements
         self.progress_bar = ft.ProgressBar(width=400, value=0.0, color=ft.Colors.GREEN_600, bgcolor=ft.Colors.GREY_200)
         self.status_text = ft.Text("", size=18, weight=ft.FontWeight.BOLD)
-        # says correct or incorrect
-        
-        # This container is our "stage"
         self.card_stage = ft.Container(expand=True, alignment=ft.alignment.center)
         
-        # --- UPDATED CODE: Create a permanent, hidden Continue button ---
+        # Keep this control mounted so feedback only needs a visibility change.
         self.continue_btn = ft.Container(
             content=ft.ElevatedButton(
-                content=ft.Text("Continue ➔", size=20, weight=ft.FontWeight.BOLD),  # <-- Larger text with bold weight
+                content=ft.Text("Continue ➔", size=20, weight=ft.FontWeight.BOLD),
                 bgcolor=ft.Colors.BLUE_600,
                 color=ft.Colors.WHITE,
                 height=70,
@@ -46,7 +41,7 @@ class SessionView(ft.Column):
                 on_click=lambda _: self._clear_and_load_next()
             ),
             visible=False,
-            padding=ft.padding.only(bottom=50, top=10) # <-- Adds space above the bottom screen edge
+            padding=ft.padding.only(bottom=50, top=10)
         )
         
         self.controls = [
@@ -55,21 +50,17 @@ class SessionView(ft.Column):
             ft.Divider(height=20, color=ft.Colors.TRANSPARENT),
             self.card_stage,
             ft.Divider(height=20, color=ft.Colors.TRANSPARENT),
-            self.continue_btn # Added to the main stage layout
+            self.continue_btn
         ]
         
     def did_mount(self):
-        """
-        Flet automatically calls this method the moment page.add() finishes in main.py.
-        It is now completely safe to load cards and call self.update().
-        """
+        """Load the first card after the view is attached to a page."""
         self._load_next_card()
 
     def _load_next_card(self):
         """Fetches the next card from the engine and displays the correct UI component."""
         card_data = self.engine.get_next_exercise()
         
-        # If there are no more cards, show the celebration screen
         if not card_data:
             self._show_completion_screen()
             return
@@ -77,7 +68,6 @@ class SessionView(ft.Column):
         activity = card_data.get("activity", "")
 
         try:
-            # 1. Route: Multiple Choice
             if activity in ["mc_geo_to_eng", "mc_eng_to_geo", "mc_geo_pair_geo", "audio_mc_to_eng", "audio_mc_to_geo"]:
                 self.card_stage.content = MultipleChoiceCard(
                     mode=activity,
@@ -86,14 +76,12 @@ class SessionView(ft.Column):
                     on_submit=self._handle_submission
                 )
 
-            # 2. Route: Match Matrix
             elif activity == "match_matrix_3x3":
                 self.card_stage.content = MatchMatrix3x3(
                     targets=card_data.get("targets", []),
                     on_submit=self._handle_submission
                 )
 
-            # 3. Route: Type Georgian & Audio Dictation
             elif activity in ["type_georgian", "audio_dictation"]:
                 self.card_stage.content = TypeGeorgian(
                     mode=activity,
@@ -101,21 +89,18 @@ class SessionView(ft.Column):
                     on_submit=self._handle_submission
                 )
 
-            # 4. Route: Passive Dialogue
             elif activity == "dialogue_passive":
                 self.card_stage.content = DialoguePassiveView(
                     dialogue_lines=card_data.get("target", {}).get("lines", []), 
                     on_continue=lambda complete: self._handle_submission(True)
                 )
 
-            # 5. Route: Live Interactive Dialogue (Roleplay)
             elif activity in ["dialogue_roleplay_mc", "dialogue_activity", "dialogue_interactive"]:
                 self.card_stage.content = LiveDialogueView(
                     steps=card_data.get("target", {}).get("steps", []),
                     on_submit=lambda complete: self._handle_submission(True)
                 )
 
-            # 6. Fallback Route
             else:
                 self.card_stage.content = ft.Text(f"Unsupported Activity: {activity}", color=ft.Colors.RED)
 
@@ -144,11 +129,7 @@ class SessionView(ft.Column):
         result = self.engine.submit_answer(is_correct, user_input)
         self.progress_bar.value = result.get("progress", 0.0)
         
-        # Reveal the continue button
         self.continue_btn.visible = True
-        
-        # Freeze the card stage so they can't click other options while reading feedback
-        #self.card_stage.disabled = True 
         
         self.update()
 
@@ -156,7 +137,7 @@ class SessionView(ft.Column):
         """Resets the UI state and pulls the next flashcard."""
         self.status_text.value = ""
         self.continue_btn.visible = False
-        self.card_stage.disabled = False # Unfreeze the stage
+        self.card_stage.disabled = False
         self._load_next_card()
 
     def _show_completion_screen(self):

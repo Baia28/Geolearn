@@ -1,3 +1,5 @@
+"""Reusable on-screen keyboard for Georgian text entry."""
+
 import flet as ft
 
 class GeorgianKeyboard(ft.Container):
@@ -11,22 +13,17 @@ class GeorgianKeyboard(ft.Container):
         self.padding = 10
         self.alignment = ft.alignment.center
         
-        # Standard Georgian QWERTY Mapping
-        # Format: (Latin_lower, Geo_lower, Latin_upper, Geo_upper)
-        # If Geo_upper is None, the key doesn't change on Shift.
+        # Each key stores lower Latin/Georgian labels and optional shifted variants.
         self.key_map = [
-            # Top Row
             [('q', 'ქ', None, None), ('w', 'წ', 'W', 'ჭ'), ('e', 'ე', None, None), 
              ('r', 'რ', 'R', 'ღ'), ('t', 'ტ', 'T', 'თ'), ('y', 'ყ', None, None), 
              ('u', 'უ', None, None), ('i', 'ი', None, None), ('o', 'ო', None, None), 
              ('p', 'პ', None, None)],
             
-            # Home Row
             [('a', 'ა', None, None), ('s', 'ს', 'S', 'შ'), ('d', 'დ', None, None), 
              ('f', 'ფ', None, None), ('g', 'გ', None, None), ('h', 'ჰ', None, None), 
              ('j', 'ჯ', 'J', 'ჟ'), ('k', 'კ', None, None), ('l', 'ლ', None, None)],
             
-            # Bottom Row
             [('z', 'ზ', 'Z', 'ძ'), ('x', 'ხ', None, None), ('c', 'ც', 'C', 'ჩ'), 
              ('v', 'ვ', None, None), ('b', 'ბ', None, None), ('n', 'ნ', None, None), 
              ('m', 'მ', None, None)]
@@ -41,7 +38,6 @@ class GeorgianKeyboard(ft.Container):
             for key_data in row_data:
                 latin_lower, geo_lower, latin_upper, geo_upper = key_data
                 
-                # Determine current display characters based on Shift state
                 if self.is_shift and geo_upper:
                     current_geo = geo_upper
                     current_lat = latin_upper
@@ -49,7 +45,6 @@ class GeorgianKeyboard(ft.Container):
                     current_geo = geo_lower
                     current_lat = latin_lower
 
-                # Create the custom key
                 key_btn = ft.Container(
                     width=40,
                     height=50,
@@ -73,7 +68,7 @@ class GeorgianKeyboard(ft.Container):
                     )
                 )
                 
-                # Dim keys that don't have a shift variant when shift is active
+                # A disabled key has no alternate Georgian character in the shifted layout.
                 if self.is_shift and not geo_upper:
                     key_btn.opacity = 0.4
                     key_btn.disabled = True
@@ -82,7 +77,6 @@ class GeorgianKeyboard(ft.Container):
             
             rows.append(ft.Row(controls=row_controls, alignment=ft.MainAxisAlignment.CENTER, spacing=4))
 
-        # Action Buttons (Shift, Space, Backspace) - Uniform styling
         shift_bg = ft.Colors.BLUE_200 if self.is_shift else ft.Colors.BLUE_GREY_100
         
         shift_btn = ft.Container(
@@ -101,7 +95,7 @@ class GeorgianKeyboard(ft.Container):
 
         space_btn = ft.Container(
             content=ft.Text("SPACE", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
-            width=200,  # <-- Fixed width stops infinite horizontal stretching!
+            width=200,
             height=44,
             bgcolor=ft.Colors.BLUE_GREY_100,
             border_radius=6,

@@ -17,6 +17,7 @@ from gui.session_view import SessionView
 from gui.fun_facts_view import FunFactsView
 from gui.passive_rev_view import PassiveReviewView
 from gui.audio_utils import play_audio_file
+
 from alphabet.alphabet_hub import AlphabetPage
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +49,18 @@ def main(page: ft.Page):
 
     def show_home():
         """Loads and renders the main dashboard."""
+
+        # 1. Define the theme toggle behavior
+        def handle_theme_toggle():
+            page.theme_mode = (
+                ft.ThemeMode.DARK 
+                if page.theme_mode == ft.ThemeMode.LIGHT 
+                else ft.ThemeMode.LIGHT
+            )
+            page.update()
+            show_home()  # Rebuild the UI with the new colors
+
+
         completed_ids = progress_db.get_completed_lesson_ids()
         phases_summary = content_db.get_phases_summary(completed_ids)
         
@@ -58,7 +71,11 @@ def main(page: ft.Page):
             on_open_fun_facts=show_fun_facts,
             on_quick_review=lambda: show_session(phase=None, unit=None, lesson=None),
 
-            on_global_passive_review=show_global_passive_review
+            on_global_passive_review=show_global_passive_review,
+
+            # 2. Pass theme state and toggle function
+            #is_dark=page.theme_mode == ft.ThemeMode.DARK,
+            #on_toggle_theme=handle_theme_toggle
         )
         
         main_stage.content = home_view
