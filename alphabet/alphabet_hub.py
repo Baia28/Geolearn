@@ -3,7 +3,7 @@ from alphabet.alphabet_db import AlphabetDB
 from alphabet.alphabet_gallery import AlphabetGalleryView
 from alphabet.anban_game import AnbanGameView
 from alphabet.alphabet_typing import AlphabetTypingGameView
-from alphabet.alphabet_keyboard import AlphabetKeyboardView
+from alphabet.keyboard_practice_view import AlphabetKeyboardView
 from alphabet.alphabet_pronunciation import PhoneticsGuideView
 
 class AlphabetPage(ft.Column):

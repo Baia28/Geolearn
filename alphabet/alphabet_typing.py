@@ -87,6 +87,7 @@ class AlphabetTypingGameView(ft.Column):
             label="Type in Georgian", 
             width=350, 
             text_align=ft.TextAlign.CENTER,
+            on_change=self._translate_physical_input,
             on_submit=self._validate
         )
 
@@ -198,6 +199,14 @@ class AlphabetTypingGameView(ft.Column):
         if len(current_text) > 0:
             self.input_field.value = current_text[:-1]
             self.input_field.update()
+
+    def _translate_physical_input(self, event):
+        """Accept Latin-keyboard input without requiring an OS layout switch."""
+        typed_value = event.control.value or ""
+        georgian_value = GeorgianKeyboard.translate_latin_text(typed_value)
+        if georgian_value != typed_value:
+            event.control.value = georgian_value
+            event.control.update()
 
     def _validate(self, e=None):
         if self.evaluated:
