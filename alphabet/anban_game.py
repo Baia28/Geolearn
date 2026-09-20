@@ -1,8 +1,8 @@
-# Visual practice quiz mode with strict distractor pools
+"""Visual alphabet-association quiz with immediate pronunciation feedback."""
 
 import flet as ft
 import random
-from gui.audio_utils import play_audio_file  # Adjust to your project's audio helper path [source: 2, 3]
+from gui.audio_utils import play_audio_file
 
 class AnbanGameView(ft.Column):
     """Visual matching quiz mode generating distractor pools exclusively from alphabet content."""
@@ -17,6 +17,7 @@ class AnbanGameView(ft.Column):
         self.questions = []
         self.remaining_questions = []
         self.all_alphabet_letters = []
+        self.letter_audio_by_geo = {}
         self.score = 0
         self.total_questions = 0
 
@@ -24,6 +25,10 @@ class AnbanGameView(ft.Column):
         self.questions = self.db.get_anban_game_questions()
         self.remaining_questions = list(self.questions)
         self.all_alphabet_letters = [q["correct_geo"] for q in self.questions]
+        self.letter_audio_by_geo = {
+            question["correct_geo"]: question.get("letter_audio")
+            for question in self.questions
+        }
         self.score = 0
         self.total_questions = len(self.questions)
         
@@ -55,7 +60,10 @@ class AnbanGameView(ft.Column):
             f"Progress: {self.total_questions - len(self.remaining_questions)} / {self.total_questions}", 
             size=14, color=ft.Colors.GREY_600
         )
-        feedback_text = ft.Text("", size=18, weight=ft.FontWeight.BOLD)
+        feedback_panel = ft.Column(
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=4,
+        )
         next_btn = ft.ElevatedButton(
             "Next Question →", 
             width=350, 
@@ -65,6 +73,16 @@ class AnbanGameView(ft.Column):
             on_click=lambda e: self.play_round(), 
             disabled=True)
         options_row = ft.Row(wrap=True, alignment=ft.MainAxisAlignment.CENTER, spacing=15)
+
+        def replay_button(audio_path: str, tooltip: str):
+            if not audio_path:
+                return ft.Container()
+            return ft.IconButton(
+                icon=ft.Icons.VOLUME_UP_ROUNDED,
+                icon_color=ft.Colors.BLUE_700,
+                tooltip=tooltip,
+                on_click=lambda _: play_audio_file(self.page, audio_path),
+            )
 
         def check_answer(selected_geo: str, clicked_btn: ft.Container):
             for btn in options_row.controls:
@@ -77,20 +95,41 @@ class AnbanGameView(ft.Column):
             if selected_geo != correct_geo:
                 clicked_btn.bgcolor = ft.Colors.RED
                 clicked_btn.content.color = ft.Colors.WHITE
-                feedback_text.value = f"❌ Incorrect! It was {correct_geo}"
-                feedback_text.color = ft.Colors.RED
-                play_audio_file(self.page, letter_audio)
+                selected_audio = self.letter_audio_by_geo.get(selected_geo)
+                feedback_panel.controls = [
+                    ft.Row(
+                        controls=[
+                            ft.Text("❌ You chose", size=18, color=ft.Colors.RED_700),
+                            ft.Text(selected_geo, size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.RED_700),
+                            replay_button(selected_audio, f"Hear {selected_geo}"),
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=4,
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.Text("Correct answer:", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700),
+                            ft.Text(correct_geo, size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700),
+                            replay_button(letter_audio, f"Hear {correct_geo}"),
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=4,
+                    ),
+                ]
 
             else:
                 self.score += 1
                 score_text.value = f"Score: {self.score}"
-                feedback_text.value = "✅ Correct!"
-                feedback_text.color = ft.Colors.GREEN
-                if letter_audio and self.page:
-                    play_audio_file(self.page, letter_audio)
+                feedback_panel.controls = [
+                    ft.Text("✅ Correct!", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN)
+                ]
                     
             next_btn.disabled = False
             self.update()
+
+            # Preserve the previous automatic pronunciation of the correct letter.
+            if letter_audio and self.page:
+                play_audio_file(self.page, letter_audio)
 
         for opt in options:
             btn = ft.Container(
@@ -133,7 +172,7 @@ class AnbanGameView(ft.Column):
                     ft.Container(height=15),
                     options_row,
                     ft.Container(height=10),
-                    feedback_text,
+                    feedback_panel,
                     ft.Container(height=10),
                     next_btn
                 ],
