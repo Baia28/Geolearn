@@ -1,265 +1,243 @@
-"""Visual alphabet-association quiz with immediate pronunciation feedback."""
+"""Visual alphabet-association quiz with pronunciation feedback."""
+
+from collections.abc import Callable
+import random
 
 import flet as ft
-import random
-from gui.audio_utils import play_audio_file
+
+from gui.services.audio import play_audio_file
+from gui.components import (
+    answer_button,
+    completion_state,
+    exercise_action_button,
+    feedback_panel,
+    icon_button,
+    page_header,
+    set_answer_button_state,
+)
+from gui.core.layout import page_shell
+from gui.core.theme import TOKENS, DesignTokens
+
 
 class AnbanGameView(ft.Column):
-    """Visual matching quiz mode generating distractor pools exclusively from alphabet content."""
-    
-    def __init__(self, db, on_back_to_menu):
-        super().__init__()
+    def __init__(
+        self,
+        db,
+        on_back_to_menu: Callable,
+        tokens: DesignTokens = TOKENS,
+    ):
+        super().__init__(expand=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         self.db = db
         self.on_back_to_menu = on_back_to_menu
-        self.expand = True
-        self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-        
-        self.questions = []
-        self.remaining_questions = []
-        self.all_alphabet_letters = []
-        self.letter_audio_by_geo = {}
+        self.tokens = tokens
+        self.questions: list[dict] = []
+        self.remaining_questions: list[dict] = []
+        self.all_alphabet_letters: list[str] = []
+        self.letter_audio_by_geo: dict[str, str | None] = {}
         self.score = 0
         self.total_questions = 0
 
-    def start_game(self):
+    def start_game(self) -> None:
         self.questions = self.db.get_anban_game_questions()
         self.remaining_questions = list(self.questions)
-        self.all_alphabet_letters = [q["correct_geo"] for q in self.questions]
+        self.all_alphabet_letters = [question["correct_geo"] for question in self.questions]
         self.letter_audio_by_geo = {
             question["correct_geo"]: question.get("letter_audio")
             for question in self.questions
         }
         self.score = 0
         self.total_questions = len(self.questions)
-        
         self.play_round()
 
-    def play_round(self):
-        self.controls.clear()
-
+    def play_round(self) -> None:
         if not self.remaining_questions:
             self.show_game_over()
             return
-
+        tokens = self.tokens
         target = random.choice(self.remaining_questions)
         self.remaining_questions.remove(target)
-
-        correct_geo = target["correct_geo"]
-        letter_audio = target["letter_audio"]
-        ex_image = target["example_image"]
-
-        # Filter distractors exclusively from alphabet pool
-        other_distractors = [g for g in self.all_alphabet_letters if g != correct_geo]
-        wrong_choices = random.sample(other_distractors, min(3, len(other_distractors)))
-        
-        options = [correct_geo] + wrong_choices
-        random.shuffle(options)
-
-        score_text = ft.Text(f"Score: {self.score}", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_800)
-        progress_text = ft.Text(
-            f"Progress: {self.total_questions - len(self.remaining_questions)} / {self.total_questions}", 
-            size=14, color=ft.Colors.GREY_600
+        correct = target["correct_geo"]
+        correct_audio = target.get("letter_audio")
+        choices = [correct] + random.sample(
+            [letter for letter in self.all_alphabet_letters if letter != correct],
+            min(3, max(0, len(self.all_alphabet_letters) - 1)),
         )
-        feedback_panel = ft.Column(
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=4,
+        random.shuffle(choices)
+
+        score_text = ft.Text(
+            f"Score: {self.score}",
+            size=tokens.typography.body_lg,
+            weight=ft.FontWeight.BOLD,
+            color=tokens.colors.primary,
         )
-        next_btn = ft.ElevatedButton(
-            "Next Question →", 
-            width=350, 
-            height=48, 
-            bgcolor=ft.Colors.BLUE_600,
-            color=ft.Colors.WHITE, 
-            on_click=lambda e: self.play_round(), 
-            disabled=True)
-        options_row = ft.Row(wrap=True, alignment=ft.MainAxisAlignment.CENTER, spacing=15)
+        feedback_container = ft.Container(visible=False)
+        next_button = exercise_action_button(
+            "continue",
+            lambda _event: self.play_round(),
+            tokens=tokens,
+        )
+        next_button.visible = False
+        option_buttons: list[ft.ElevatedButton] = []
 
-        def replay_button(audio_path: str, tooltip: str):
-            if not audio_path:
-                return ft.Container()
-            return ft.IconButton(
-                icon=ft.Icons.VOLUME_UP_ROUNDED,
-                icon_color=ft.Colors.BLUE_700,
-                tooltip=tooltip,
-                on_click=lambda _: play_audio_file(self.page, audio_path),
-            )
-
-        def check_answer(selected_geo: str, clicked_btn: ft.Container):
-            for btn in options_row.controls:
-                btn.disabled = True
-                if btn.data == correct_geo:
-                    btn.bgcolor = ft.Colors.GREEN
-                    btn.content.color = ft.Colors.WHITE
-                    btn.update()
-
-            if selected_geo != correct_geo:
-                clicked_btn.bgcolor = ft.Colors.RED
-                clicked_btn.content.color = ft.Colors.WHITE
-                selected_audio = self.letter_audio_by_geo.get(selected_geo)
-                feedback_panel.controls = [
-                    ft.Row(
-                        controls=[
-                            ft.Text("❌ You chose", size=18, color=ft.Colors.RED_700),
-                            ft.Text(selected_geo, size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.RED_700),
-                            replay_button(selected_audio, f"Hear {selected_geo}"),
-                        ],
-                        alignment=ft.MainAxisAlignment.CENTER,
-                        spacing=4,
-                    ),
-                    ft.Row(
-                        controls=[
-                            ft.Text("Correct answer:", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700),
-                            ft.Text(correct_geo, size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700),
-                            replay_button(letter_audio, f"Hear {correct_geo}"),
-                        ],
-                        alignment=ft.MainAxisAlignment.CENTER,
-                        spacing=4,
-                    ),
-                ]
-
-            else:
+        def check_answer(selected: str) -> None:
+            is_correct = selected == correct
+            for button in option_buttons:
+                button.disabled = True
+                if button.data == correct:
+                    set_answer_button_state(button, "correct", tokens=tokens)
+                elif button.data == selected and not is_correct:
+                    set_answer_button_state(button, "incorrect", tokens=tokens)
+            if is_correct:
                 self.score += 1
                 score_text.value = f"Score: {self.score}"
-                feedback_panel.controls = [
-                    ft.Text("✅ Correct!", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN)
-                ]
-                    
-            next_btn.disabled = False
+
+            body: list[ft.Control] = []
+            if not is_correct:
+                selected_audio = self.letter_audio_by_geo.get(selected)
+                body.extend(
+                    [
+                        self._answer_audio_row(
+                            f"You chose {selected}",
+                            selected_audio,
+                            f"Hear {selected}",
+                            tokens.colors.on_error_container,
+                        ),
+                        self._answer_audio_row(
+                            f"Correct answer: {correct}",
+                            correct_audio,
+                            f"Hear {correct}",
+                            tokens.colors.on_success_container,
+                        ),
+                    ]
+                )
+            panel = feedback_panel(
+                success=is_correct,
+                title="Correct!" if is_correct else "Not quite…",
+                body=body,
+                width=tokens.dimensions.form_width,
+                tokens=tokens,
+            )
+            feedback_container.content = panel.content
+            feedback_container.bgcolor = panel.bgcolor
+            feedback_container.border = panel.border
+            feedback_container.border_radius = panel.border_radius
+            feedback_container.padding = panel.padding
+            feedback_container.width = panel.width
+            feedback_container.visible = True
+            next_button.visible = True
             self.update()
+            if correct_audio and self.page:
+                play_audio_file(self.page, correct_audio)
 
-            # Preserve the previous automatic pronunciation of the correct letter.
-            if letter_audio and self.page:
-                play_audio_file(self.page, letter_audio)
-
-        for opt in options:
-            btn = ft.Container(
-                width=75,
-                height=75,
-                bgcolor=ft.Colors.WHITE,
-                border_radius=10,
+        option_buttons.extend(
+            answer_button(
+                choice,
+                lambda _event, selected=choice: check_answer(selected),
+                width=76,
+                height=76,
+                text_size=tokens.typography.page_title,
+                data=choice,
+                tokens=tokens,
+            )
+            for choice in choices
+        )
+        question_number = self.total_questions - len(self.remaining_questions)
+        image_source = target.get("example_image")
+        image = (
+            ft.Image(
+                src=image_source,
+                width=tokens.dimensions.illustration_size,
+                height=tokens.dimensions.illustration_size,
+                fit=ft.ImageFit.CONTAIN,
+            )
+            if image_source
+            else ft.Container(
+                width=tokens.dimensions.illustration_size,
+                height=tokens.dimensions.illustration_size,
                 alignment=ft.alignment.center,
-                ink=True,
-                data=opt,
-                content=ft.Text(opt, size=28, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK),
-                shadow=ft.BoxShadow(blur_radius=4, color="#00000010")
+                bgcolor=tokens.colors.subtle_surface,
+                border_radius=tokens.radius.lg,
+                content=ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED_OUTLINED, color=tokens.colors.text_muted),
             )
-            btn.on_click = lambda e, val=opt, b=btn: check_answer(val, b)
-            options_row.controls.append(btn)
-
-        # Standardized Header
-        header = ft.Container(
-            width=650,
-            content=ft.Row(
-                controls=[
-                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                    ft.Text("Anbani Associations", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                    score_text
+        )
+        self.controls = [
+            page_shell(
+                [
+                    page_header(
+                        "Anbani Associations",
+                        on_back=lambda _event: self.on_back_to_menu(),
+                        back_label="Back to alphabet hub",
+                        trailing=score_text,
+                        max_width=tokens.dimensions.reading_width,
+                        tokens=tokens,
+                    ),
+                    ft.Text(
+                        f"Question {question_number} of {self.total_questions}",
+                        size=tokens.typography.body,
+                        color=tokens.colors.text_secondary,
+                    ),
+                    ft.Text(
+                        "Which letter goes with this image?",
+                        size=tokens.typography.title_sm,
+                        weight=ft.FontWeight.W_500,
+                        color=tokens.colors.text_primary,
+                    ),
+                    image,
+                    ft.Row(
+                        option_buttons,
+                        wrap=True,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=tokens.spacing.lg,
+                        run_spacing=tokens.spacing.lg,
+                    ),
+                    feedback_container,
+                    next_button,
                 ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                max_width=tokens.dimensions.reading_width,
+                tokens=tokens,
             )
-        )
-
-        game_layout = ft.Container(
-            width=650,
-            content=ft.Column(
-                controls=[
-                    header,
-                    progress_text,
-                    ft.Container(height=10),
-                    ft.Text("Which letter goes with the image below?", size=18, weight=ft.FontWeight.W_500, color=ft.Colors.GREY_800), # orrr Which letter does the image below belong to               
-                    ft.Container(height=10),
-                    ft.Image(src=ex_image or "", width=180, height=180, fit=ft.ImageFit.CONTAIN),
-                    ft.Container(height=15),
-                    options_row,
-                    ft.Container(height=10),
-                    feedback_panel,
-                    ft.Container(height=10),
-                    next_btn
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=6
-            )
-        )
-
-        main_wrapper = ft.Container(
-            content=ft.Column(
-                controls=[game_layout],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True
-            ),
-            padding=ft.padding.only(top=10, bottom=20),
-            alignment=ft.alignment.top_center,
-            expand=True
-        )
-
-        self.controls = [main_wrapper]
+        ]
         if self.page:
             self.update()
 
-    def show_game_over(self):
-        self.controls.clear()
-        pct = int((self.score / self.total_questions) * 100) if self.total_questions > 0 else 0
-        pct_color = ft.Colors.GREEN_600 if pct >= 70 else ft.Colors.BLUE_700
+    def _answer_audio_row(
+        self,
+        label: str,
+        audio_path: str | None,
+        tooltip: str,
+        color: str,
+    ) -> ft.Row:
+        controls: list[ft.Control] = [
+            ft.Text(
+                label,
+                size=self.tokens.typography.body_lg,
+                weight=ft.FontWeight.BOLD,
+                color=color,
+            )
+        ]
+        if audio_path:
+            controls.append(
+                icon_button(
+                    ft.Icons.VOLUME_UP_ROUNDED,
+                    lambda _event: play_audio_file(self.page, audio_path),
+                    tooltip=tooltip,
+                    tokens=self.tokens,
+                )
+            )
+        return ft.Row(controls, alignment=ft.MainAxisAlignment.CENTER, spacing=self.tokens.spacing.xs)
 
-        play_again_btn = ft.ElevatedButton(
-            content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.REPLAY_ROUNDED, size=22),
-                    ft.Text("Play Again", size=16, weight=ft.FontWeight.BOLD),
-                ],
-                alignment=ft.MainAxisAlignment.CENTER,
-                spacing=8
-            ),
-            width=220,
-            height=50,
-            style=ft.ButtonStyle(
-                bgcolor=ft.Colors.BLUE_600,
-                color=ft.Colors.WHITE,
-                shape=ft.RoundedRectangleBorder(radius=12),
-            ),
-            on_click=lambda e: self.start_game()
-        )
-
-        back_hub_btn = ft.OutlinedButton(
-            content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.GRID_VIEW_ROUNDED, size=20),
-                    ft.Text("Alphabet Hub", size=16, weight=ft.FontWeight.BOLD),
-                ],
-                alignment=ft.MainAxisAlignment.CENTER,
-                spacing=8
-            ),
-            width=220,
-            height=50,
-            style=ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=12),
-            ),
-            on_click=lambda e: self.on_back_to_menu()
-        )
-
+    def show_game_over(self) -> None:
+        percent = int((self.score / self.total_questions) * 100) if self.total_questions else 0
         self.controls = [
-            ft.Container(
-                content=ft.Column(
-                    [
-                        ft.Icon(ft.Icons.EMOJI_EVENTS_ROUNDED, size=90, color=ft.Colors.AMBER_600),
-                        ft.Text("QUIZ COMPLETE!", size=28, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                        ft.Text(f"Final Score: {self.score} / {self.total_questions}", size=20, weight=ft.FontWeight.W_600, color=ft.Colors.GREY_800),
-                        ft.Text(f"{pct}%", size=48, color=pct_color, weight=ft.FontWeight.BOLD),
-                        ft.Container(height=15),
-                        ft.Row(
-                            [play_again_btn, back_hub_btn],
-                            alignment=ft.MainAxisAlignment.CENTER,
-                            spacing=15
-                        )
-                    ],
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=8
-                ),
-                alignment=ft.alignment.top_center,  # Shifted from center to top_center
-                padding=ft.padding.only(top=-100),     # Adjust this number to raise/lower
-                expand=True
+            completion_state(
+                title="Quiz complete!",
+                subtitle=f"Final score: {self.score} / {self.total_questions}",
+                score=f"{percent}%",
+                primary_label="Play again",
+                on_primary=lambda _event: self.start_game(),
+                secondary_label="Alphabet hub",
+                on_secondary=lambda _event: self.on_back_to_menu(),
+                tokens=self.tokens,
             )
         ]
         if self.page:

@@ -77,49 +77,79 @@ class ReviewSession:
             return 0.0
         return min(self.completed_count / self.total_exercises, 1.0)
 
+    def _get_accessible_lesson_ids(self, content_cursor):
+        """Resolve completed and already-started lessons without exposing future content."""
+        completed_ids = set()
+        started_coordinates = []
+        conn_progress = sqlite3.connect(self.progress_db_path)
+        cursor_progress = conn_progress.cursor()
+        try:
+            cursor_progress.execute(
+                "SELECT lesson_id FROM lesson_progress WHERE is_completed = 1"
+            )
+            completed_ids.update(row[0] for row in cursor_progress.fetchall())
+        except sqlite3.Error:
+            pass
+
+        try:
+            cursor_progress.execute("""
+                SELECT DISTINCT phase_num, unit_num, lesson_num
+                FROM research_activity_log
+                WHERE phase_num IS NOT NULL AND phase_num >= 0
+                  AND unit_num IS NOT NULL AND unit_num > 0
+                  AND lesson_num IS NOT NULL AND lesson_num > 0
+            """)
+            started_coordinates = cursor_progress.fetchall()
+        except sqlite3.Error:
+            pass
+        finally:
+            conn_progress.close()
+
+        for phase_num, unit_num, lesson_num in started_coordinates:
+            content_cursor.execute("""
+                SELECT l.lesson_id
+                FROM lessons l
+                JOIN units u ON l.unit_id = u.unit_id
+                JOIN phases p ON u.phase_id = p.phase_id
+                WHERE p.sequence_order = ?
+                  AND u.sequence_order = ?
+                  AND l.sequence_order = ?
+            """, (phase_num, unit_num, lesson_num))
+            row = content_cursor.fetchone()
+            if row:
+                completed_ids.add(row[0])
+        return completed_ids
+
     def _get_review_content_ids(self, limit):
         """Fetches review items using clean two-step queries to avoid SQLite attach locks."""
         unit_content_ids = None
 
-        # 1. Fetch content IDs for unit review from content_poolbook.db
+        # 1. Fetch content IDs only from completed or already-started lessons.
         if self.phase_num is not None and self.unit_num is not None:
             try:
                 conn_content = sqlite3.connect(self.db_path)
                 cursor_content = conn_content.cursor()
-
-                # Dynamic column check on units and lessons tables
-                cursor_content.execute("PRAGMA table_info(units)")
-                unit_cols = [row[1] for row in cursor_content.fetchall()]
-                cursor_content.execute("PRAGMA table_info(lessons)")
-                lesson_cols = [row[1] for row in cursor_content.fetchall()]
-
-                unit_col = "unit_num" if "unit_num" in unit_cols else ("unit_id" if "unit_id" in unit_cols else None)
-                phase_col = "phase_num" if "phase_num" in unit_cols else ("phase_id" if "phase_id" in unit_cols else None)
-
-                if unit_col and phase_col:
+                accessible_ids = self._get_accessible_lesson_ids(cursor_content)
+                if accessible_ids:
+                    placeholders = ",".join("?" for _ in accessible_ids)
                     cursor_content.execute(f"""
-                        SELECT DISTINCT lc.associated_id 
+                        SELECT DISTINCT lc.associated_id
                         FROM lesson_contents lc
                         JOIN lessons l ON lc.lesson_id = l.lesson_id
                         JOIN units u ON l.unit_id = u.unit_id
-                        WHERE u.{unit_col} = ? AND u.{phase_col} = ?
-                    """, (self.unit_num, self.phase_num))
-                elif "unit_num" in lesson_cols and "phase_num" in lesson_cols:
-                    cursor_content.execute("""
-                        SELECT DISTINCT lc.associated_id 
-                        FROM lesson_contents lc
-                        JOIN lessons l ON lc.lesson_id = l.lesson_id
-                        WHERE l.unit_num = ? AND l.phase_num = ?
-                    """, (self.unit_num, self.phase_num))
+                        JOIN phases p ON u.phase_id = p.phase_id
+                        JOIN lesson_component_types lct
+                          ON lc.component_type_id = lct.component_type_id
+                        WHERE p.sequence_order = ?
+                          AND u.sequence_order = ?
+                          AND lct.name = 'monologue'
+                          AND l.lesson_id IN ({placeholders})
+                    """, [self.phase_num, self.unit_num, *sorted(accessible_ids)])
+                    unit_content_ids = [
+                        row[0] for row in cursor_content.fetchall() if row[0] is not None
+                    ]
                 else:
-                    cursor_content.execute("""
-                        SELECT DISTINCT lc.associated_id 
-                        FROM lesson_contents lc
-                        JOIN lessons l ON lc.lesson_id = l.lesson_id
-                        WHERE l.unit_id = ?
-                    """, (self.unit_num,))
-
-                unit_content_ids = [row[0] for row in cursor_content.fetchall() if row[0] is not None]
+                    unit_content_ids = []
                 conn_content.close()
             except Exception as e:
                 print(f"⚠️ Error fetching unit content IDs: {e}")
@@ -227,7 +257,8 @@ class ReviewSession:
                 "eng": eng, 
                 "geo": geo, 
                 "trans": display_trans,
-                "audio": audio_file
+                "audio": audio_file,
+                "content_type": db_mgr.get_content_type(c_id),
             }
             
             # Now uses the strictly typed db_mgr distractor generator

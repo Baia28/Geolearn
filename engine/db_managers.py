@@ -145,6 +145,25 @@ class ProgressDBManager:
             conn.close()
         return completed
 
+    def get_started_lesson_coordinates(self):
+        """Return lessons with recorded activity even when they are not complete yet."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT DISTINCT phase_num, unit_num, lesson_num
+                FROM research_activity_log
+                WHERE phase_num IS NOT NULL AND phase_num >= 0
+                  AND unit_num IS NOT NULL AND unit_num > 0
+                  AND lesson_num IS NOT NULL AND lesson_num > 0
+            """)
+            coordinates = [tuple(row) for row in cursor.fetchall()]
+        except Exception:
+            coordinates = []
+        finally:
+            conn.close()
+        return coordinates
+
     def should_fade_transliteration(self, content_id, mastery_threshold=3):
         """Checks if the user has mastered a word enough times to hide its phonetics helper."""
         conn = sqlite3.connect(self.db_path)
@@ -417,6 +436,20 @@ class ContentDBManager:
         row = cursor.fetchone()
         conn.close()
         return row[0] if row else None
+
+    def get_content_type(self, content_id: int) -> str | None:
+        """Return the semantic content type used by summaries and renderers."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT t.name
+            FROM content c
+            JOIN types t ON c.type_id = t.type_id
+            WHERE c.content_id = ?
+        """, (content_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0].lower() if row and row[0] else None
 
     def get_convo_pair_details(self, pair_id):
         """Fetches matched conversational components with support for multiple correct responses."""

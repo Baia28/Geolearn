@@ -1,11 +1,11 @@
-"""Regression tests for overlapping playback in the shared audio helper."""
+"""Regression tests for exclusive playback in the shared audio helper."""
 
 import unittest
 from unittest.mock import patch
 
 from flet.core.audio import ReleaseMode
 
-from gui import audio_utils
+from gui.services import audio as audio_utils
 
 
 class FakePage:
@@ -29,19 +29,17 @@ class FakeAudio:
 
 
 class PlayAudioFileTests(unittest.TestCase):
-    def test_three_clips_overlap_without_growing_the_overlay_indefinitely(self):
+    def test_new_clip_replaces_the_active_pronunciation(self):
         page = FakePage()
 
         with patch.object(audio_utils.ft, "Audio", FakeAudio):
             audio_utils.play_audio_file(page, "audio/first.m4a")
-            audio_utils.play_audio_file(page, "audio/second.m4a")
-            audio_utils.play_audio_file(page, "audio/third.m4a")
             first_player = page.overlay[0]
-            audio_utils.play_audio_file(page, "audio/fourth.m4a")
+            audio_utils.play_audio_file(page, "audio/second.m4a")
 
         self.assertEqual(
             [player.src for player in page.overlay],
-            ["/audio/second.m4a", "/audio/third.m4a", "/audio/fourth.m4a"],
+            ["/audio/second.m4a"],
         )
         self.assertTrue(all(player.autoplay for player in page.overlay))
         self.assertTrue(

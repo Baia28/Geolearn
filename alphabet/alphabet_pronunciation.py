@@ -1,228 +1,249 @@
+"""Interactive guide to Georgian phonetics and letter groups."""
+
+from collections.abc import Callable
+
 import flet as ft
-from gui.audio_utils import play_audio_file
+
+from gui.services.audio import play_audio_file
+from gui.components import content_card, page_header
+from gui.core.layout import page_shell
+from gui.core.theme import TOKENS, DesignTokens
+
 
 class PhoneticsGuideView(ft.Column):
-    """Interactive educational guide breaking down Georgian sounds, phonetics, and letter groups."""
-
-    def __init__(self, db, on_back_to_menu):
-        super().__init__()
+    def __init__(
+        self,
+        db,
+        on_back_to_menu: Callable,
+        tokens: DesignTokens = TOKENS,
+    ):
+        super().__init__(expand=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         self.db = db
         self.on_back_to_menu = on_back_to_menu
-        self.expand = True
-        self.scroll = ft.ScrollMode.AUTO
-        self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-        self.spacing = 15
-
-        # Load letter audio lookup table
+        self.tokens = tokens
         letters = self.db.get_alphabet_letters()
-        self.audio_map = {item.get("georgian"): item.get("letter_audio") for item in letters if item.get("georgian")}
-
+        self.audio_map = {
+            item.get("georgian"): item.get("letter_audio")
+            for item in letters
+            if item.get("georgian")
+        }
         self._build_ui()
 
-    def _build_ui(self):
-        self.controls.clear()
-
-        # Header Row
-        header = ft.Container(
-            width=650,
-            content=ft.Row(
-                controls=[
-                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                    ft.Text("Phonetics & Sound Groups", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                    ft.Container(width=48)
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
-            )
-        )
-
-        intro_text = ft.Container(
-            width=650,
-            content=ft.Text(
-                "Tap any letter chip to hear its exact sound. Use these groups to master subtle Georgian phonetic contrasts!",
-                size=14, color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER
-            )
-        )
-
-        # Tab 1: Confusion Triads & Contrast Pairs
-        triad_data = [
+    def _build_ui(self) -> None:
+        tokens = self.tokens
+        triads = [
             ("Labials (B/P sound family)", ["ბ", "ფ", "პ"], "Voiced → Aspirated → Ejective"),
             ("Velars (G/K sound family)", ["გ", "ქ", "კ"], "Voiced → Aspirated → Ejective"),
             ("Dentals (D/T sound family)", ["დ", "თ", "ტ"], "Voiced → Aspirated → Ejective"),
             ("Dental Affricates (DZ/TS)", ["ძ", "ც", "წ"], "Voiced → Aspirated → Ejective"),
             ("Postalveolar Affricates (J/CH)", ["ჯ", "ჩ", "ჭ"], "Voiced → Aspirated → Ejective"),
-            ("Gutturals & Throat Sounds", ["ღ", "ხ", "ჰ"], "Deep Voiced → Harsh Voiceless → Soft H"),
+            ("Gutturals & Throat Sounds", ["ღ", "ხ", "ჰ"], "Deep voiced → Harsh voiceless → Soft H"),
         ]
-
-        # Tab 2: Sound Types (Aspirated, Ejectives, Gutturals)
         sound_types = [
-            ("Ejective Sounds (Glottalized Stop)", ["ტ", "კ", "პ", "წ", "ჭ", "ყ"], "Sharply popped sounds produced with closed vocal cords.", ft.Colors.RED_100, ft.Colors.RED_900),
-            ("Aspirated Sounds (Puffed Air)", ["თ", "ფ", "ქ"], "Accompanied by a strong puff of air (similar to English p, t, k).", ft.Colors.BLUE_100, ft.Colors.BLUE_900),
-            ("Affricates (Combination Sounds)", ["ც", "ძ", "ჩ", "ჯ", "წ", "ჭ"], "Starts as a stop consonant and releases into a fricative.", ft.Colors.PURPLE_100, ft.Colors.PURPLE_900),
-            ("Gutturals & Throat Consonants", ["ხ", "ღ", "ყ", "ქ"], "Pronounced deeper back in the palate/throat.", ft.Colors.AMBER_100, ft.Colors.AMBER_900),
+            ("Ejective Sounds", ["ტ", "კ", "პ", "წ", "ჭ", "ყ"], "Sharply popped sounds produced with closed vocal cords.", "error"),
+            ("Aspirated Sounds", ["თ", "ფ", "ქ"], "Accompanied by a strong puff of air.", "primary"),
+            ("Affricates", ["ც", "ძ", "ჩ", "ჯ", "წ", "ჭ"], "A stop consonant that releases into a fricative.", "secondary"),
+            ("Gutturals & Throat Consonants", ["ხ", "ღ", "ყ", "ქ"], "Pronounced deeper in the palate or throat.", "success"),
         ]
-
-        # Tab 3: Linguistic Articulation Chart
-        articulation_data = [
+        articulation = [
             ("Bilabial (Both Lips)", ["ბ", "პ", "ფ", "მ"]),
-            ("Dental / Alveolar (Tongue to Teeth/Ridge)", ["დ", "თ", "ტ", "ს", "ზ", "ლ", "რ", "ნ", "ც", "ძ", "წ"]),
-            ("Postalveolar (Behind Tooth Ridge)", ["შ", "ჟ", "ჩ", "ჯ", "ჭ"]),
+            ("Dental / Alveolar", ["დ", "თ", "ტ", "ს", "ზ", "ლ", "რ", "ნ", "ც", "ძ", "წ"]),
+            ("Postalveolar", ["შ", "ჟ", "ჩ", "ჯ", "ჭ"]),
             ("Velar (Soft Palate)", ["გ", "კ", "ქ", "ხ"]),
             ("Uvular (Back Throat)", ["ღ", "ყ"]),
             ("Glottal (Vocal Cords)", ["ჰ"]),
         ]
+        pairs = [("ბ", "პ"), ("გ", "კ"), ("დ", "ტ"), ("ზ", "ს"), ("ჟ", "შ"), ("ძ", "ც"), ("ჯ", "ჩ"), ("ღ", "ხ")]
 
-        # Tab 4: Voiced vs Voicless
-        pair_data = [("Voiced vs. Voiceless Pairs", [("ბ", "პ"), ("გ", "კ"), ("დ", "ტ"), ("ზ", "ს"), ("ჟ", "შ"), ("ძ", "ც"), ("ჯ", "ჩ"), ("ღ", "ხ")])]
-
-
-        # Build UI Cards
-        triad_cards = [self._create_group_card(title, letters, sub) for title, letters, sub in triad_data]
-        sound_type_cards = [self._create_category_card(title, letters, desc, bg, fg) for title, letters, desc, bg, fg in sound_types]
-        articulation_cards = [self._create_simple_card(title, letters) for title, letters in articulation_data]
-        pair_cards = [self._create_pairs_card(title, letters) for title, letters in pair_data]
-
-
-        # Tabs configured without height expansion conflicts
-        tabs = ft.Container(
-            width=650,
-            content=ft.Tabs(
-                selected_index=0,
-                animation_duration=200,
-                tabs=[
-                    ft.Tab(
-                        text="Confusion Groups",
-                        icon=ft.Icons.COMPARE_ARROWS_ROUNDED,
-                        content=ft.Column(controls=triad_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        tabs = ft.Tabs(
+            selected_index=0,
+            animation_duration=tokens.motion.normal,
+            expand=1,
+            scrollable=True,
+            tabs=[
+                ft.Tab(
+                    text="Confusion Groups",
+                    icon=ft.Icons.COMPARE_ARROWS_ROUNDED,
+                    content=self._card_list(
+                        [self._group_card(title, letters, subtitle) for title, letters, subtitle in triads]
                     ),
-                    ft.Tab(
-                        text="Sound Categories",
-                        icon=ft.Icons.RECORD_VOICE_OVER_ROUNDED,
-                        content=ft.Column(controls=sound_type_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                ),
+                ft.Tab(
+                    text="Sound Categories",
+                    icon=ft.Icons.RECORD_VOICE_OVER_ROUNDED,
+                    content=self._card_list(
+                        [self._category_card(title, letters, description, tone) for title, letters, description, tone in sound_types]
                     ),
-                    ft.Tab(
-                        text="Place of Articulation",
-                        icon=ft.Icons.ANALYTICS_ROUNDED,
-                        content=ft.Column(controls=articulation_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                ),
+                ft.Tab(
+                    text="Place of Articulation",
+                    icon=ft.Icons.ANALYTICS_ROUNDED,
+                    content=self._card_list(
+                        [self._simple_card(title, letters) for title, letters in articulation]
                     ),
-                    ft.Tab(
-                        text="Voiced vs. Voiceless",
-                        icon=ft.Icons.SWAP_HORIZ_ROUNDED,
-                        content=ft.Column(controls=pair_cards, spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-                    ),
-                ],
-            )
+                ),
+                ft.Tab(
+                    text="Voiced vs. Voiceless",
+                    icon=ft.Icons.SWAP_HORIZ_ROUNDED,
+                    content=self._card_list([self._pairs_card(pairs)]),
+                ),
+            ],
         )
-
         self.controls = [
-            ft.Container(height=10),
-            header,
-            intro_text,
-            tabs,
-            ft.Container(height=30)
+            page_shell(
+                [
+                    page_header(
+                        "Phonetics & Sound Groups",
+                        subtitle="Tap a letter to hear its exact sound",
+                        on_back=lambda _event: self.on_back_to_menu(),
+                        back_label="Back to alphabet hub",
+                        max_width=tokens.dimensions.reading_width,
+                        tokens=tokens,
+                    ),
+                    tabs,
+                ],
+                max_width=tokens.dimensions.reading_width,
+                scroll=False,
+                tokens=tokens,
+            )
         ]
 
-    def _play_sound(self, char: str):
-        path = self.audio_map.get(char)
+    def _card_list(self, cards: list[ft.Control]) -> ft.ListView:
+        return ft.ListView(
+            controls=cards,
+            spacing=self.tokens.spacing.md,
+            padding=ft.padding.only(top=self.tokens.spacing.md, bottom=self.tokens.spacing.xl),
+        )
+
+    def _play_sound(self, character: str) -> None:
+        path = self.audio_map.get(character)
         if path and self.page:
             play_audio_file(self.page, path)
 
-    def _create_letter_chip(self, char: str, bg_color=ft.Colors.BLUE_50, text_color=ft.Colors.BLUE_900):
-        return ft.Container(
+    def _letter_chip(self, character: str, tone: str = "primary") -> ft.Card:
+        tokens = self.tokens
+        backgrounds = {
+            "primary": tokens.colors.primary_container,
+            "secondary": tokens.colors.secondary_container,
+            "success": tokens.colors.success_container,
+            "error": tokens.colors.error_container,
+        }
+        foregrounds = {
+            "primary": tokens.colors.on_primary_container,
+            "secondary": tokens.colors.on_secondary_container,
+            "success": tokens.colors.on_success_container,
+            "error": tokens.colors.on_error_container,
+        }
+        return content_card(
+            ft.Text(
+                character,
+                size=tokens.typography.title,
+                weight=ft.FontWeight.BOLD,
+                color=foregrounds[tone],
+            ),
+            on_click=lambda _event: self._play_sound(character),
             width=52,
             height=52,
-            bgcolor=bg_color,
-            border_radius=10,
-            border=ft.border.all(1, ft.Colors.GREY_300),
+            padding=0,
+            bgcolor=backgrounds[tone],
+            tooltip=f"Hear {character}",
             alignment=ft.alignment.center,
-            ink=True,
-            on_click=lambda e: self._play_sound(char),
-            tooltip=f"Tap to hear {char}",
-            content=ft.Text(char, size=24, weight=ft.FontWeight.BOLD, color=text_color)
+            tokens=tokens,
         )
 
-    def _create_group_card(self, title: str, letters: list, subtitle: str):
-        chips = [self._create_letter_chip(char) for char in letters]
-        return ft.Card(
-            content=ft.Container(
-                padding=14,
-                content=ft.Column([
-                    ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
-                    ft.Text(subtitle, size=12, color=ft.Colors.GREY_600, italic=True),
-                    ft.Row(controls=chips, spacing=10)
-                ], spacing=8)
-            ),
-            width=650
+    def _group_card(self, title: str, letters: list, subtitle: str) -> ft.Card:
+        return self._base_card(
+            title,
+            subtitle,
+            [self._letter_chip(character) for character in letters],
         )
 
-    def _create_category_card(self, title: str, letters: list, desc: str, bg_color, text_color):
-        chips = [self._create_letter_chip(char, bg_color=bg_color, text_color=text_color) for char in letters]
-        return ft.Card(
-            content=ft.Container(
-                padding=14,
-                content=ft.Column([
-                    ft.Text(title, size=16, weight=ft.FontWeight.BOLD, color=text_color),
-                    ft.Text(desc, size=13, color=ft.Colors.GREY_700),
-                    ft.Row(controls=chips, wrap=True, spacing=8)
-                ], spacing=8)
-            ),
-            width=650
+    def _category_card(self, title: str, letters: list, description: str, tone: str) -> ft.Card:
+        return self._base_card(
+            title,
+            description,
+            [self._letter_chip(character, tone) for character in letters],
         )
 
-    def _create_simple_card(self, title: str, letters: list):
-        chips = [self._create_letter_chip(char) for char in letters]
-        return ft.Card(
-            content=ft.Container(
-                padding=14,
-                content=ft.Column([
-                    ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
-                    ft.Row(controls=chips, wrap=True, spacing=8)
-                ], spacing=6)
-            ),
-            width=650
-        )
-    
-    def _create_pairs_card(self, title: str, pairs: list):
-        pair_boxes = []
-        for voiced, voiceless in pairs:
-            v_chip = self._create_letter_chip(voiced, bg_color=ft.Colors.TEAL_100, text_color=ft.Colors.TEAL_900)
-            vl_chip = self._create_letter_chip(voiceless, bg_color=ft.Colors.INDIGO_100, text_color=ft.Colors.INDIGO_900)
-            
-            box = ft.Container(
-                padding=8,
-                bgcolor=ft.Colors.WHITE,
-                border_radius=12,
-                border=ft.border.all(1, ft.Colors.GREY_300),
-                content=ft.Row(
-                    controls=[
-                        v_chip,
-                        ft.Text("vs", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_500),
-                        vl_chip
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=10
+    def _simple_card(self, title: str, letters: list) -> ft.Card:
+        return self._base_card(title, None, [self._letter_chip(character) for character in letters])
+
+    def _base_card(
+        self,
+        title: str,
+        subtitle: str | None,
+        chips: list[ft.Control],
+    ) -> ft.Card:
+        tokens = self.tokens
+        controls: list[ft.Control] = [
+            ft.Text(
+                title,
+                size=tokens.typography.body_lg,
+                weight=ft.FontWeight.BOLD,
+                color=tokens.colors.text_primary,
+            )
+        ]
+        if subtitle:
+            controls.append(
+                ft.Text(
+                    subtitle,
+                    size=tokens.typography.body_sm,
+                    color=tokens.colors.text_secondary,
+                    italic=True,
                 )
             )
-            pair_boxes.append(box)
+        controls.append(ft.Row(chips, wrap=True, spacing=tokens.spacing.sm, run_spacing=tokens.spacing.sm))
+        return content_card(
+            ft.Column(controls, spacing=tokens.spacing.sm),
+            padding=tokens.spacing.lg,
+            tokens=tokens,
+        )
 
-        return ft.Card(
-            content=ft.Container(
-                padding=18,
-                content=ft.Column(
+    def _pairs_card(self, pairs: list) -> ft.Card:
+        tokens = self.tokens
+        pair_boxes = [
+            content_card(
+                ft.Row(
                     controls=[
-                        ft.Text(title, size=17, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                        ft.Text("Teal = Voiced (vocal cords vibrate)  |  Indigo = Voiceless", size=12, color=ft.Colors.GREY_600, italic=True),
-                        ft.Container(height=6),
-                        ft.Row(
-                            controls=pair_boxes,
-                            wrap=True,
-                            alignment=ft.MainAxisAlignment.CENTER,
-                            spacing=12,
-                            run_spacing=12
-                        )
+                        self._letter_chip(voiced, "secondary"),
+                        ft.Text("vs", weight=ft.FontWeight.BOLD, color=tokens.colors.text_muted),
+                        self._letter_chip(voiceless, "primary"),
                     ],
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=8
-                )
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=tokens.spacing.sm,
+                ),
+                padding=tokens.spacing.sm,
+                elevation=tokens.elevation.flat,
+                tokens=tokens,
+            )
+            for voiced, voiceless in pairs
+        ]
+        return content_card(
+            ft.Column(
+                controls=[
+                    ft.Text(
+                        "Voiced vs. Voiceless Pairs",
+                        size=tokens.typography.title_sm,
+                        weight=ft.FontWeight.BOLD,
+                        color=tokens.colors.text_primary,
+                    ),
+                    ft.Text(
+                        "Teal = voiced • Blue = voiceless",
+                        size=tokens.typography.label,
+                        color=tokens.colors.text_secondary,
+                        italic=True,
+                    ),
+                    ft.Row(
+                        controls=pair_boxes,
+                        wrap=True,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=tokens.spacing.md,
+                        run_spacing=tokens.spacing.md,
+                    ),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=tokens.spacing.sm,
             ),
-            width=650
+            padding=tokens.spacing.lg,
+            tokens=tokens,
         )

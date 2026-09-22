@@ -14,13 +14,39 @@ class PassiveReviewEngine:
             'phrases': [],
             'pairs': [],
             'dialogues': [],
+            'category_counts': {'vocab': 0, 'phrases': 0, 'dialogues': 0},
             'locked': locked,
         }
 
-    def _populate_lesson_content(self, cursor, lesson_id: int, entry: dict) -> None:
-        """Add one unlocked lesson's reference material to its review section."""
-        raw_steps = self.db.get_lesson_structure(lesson_id)
+    @staticmethod
+    def _lesson_category_counts(cursor, raw_steps: list) -> dict[str, int]:
+        """Count category availability without loading locked lesson material."""
+        counts = {'vocab': 0, 'phrases': 0, 'dialogues': 0}
+        for _, comp_type, assoc_id in raw_steps:
+            if comp_type == 'monologue':
+                cursor.execute("""
+                    SELECT t.name
+                    FROM content c
+                    JOIN types t ON c.type_id = t.type_id
+                    WHERE c.content_id = ?
+                """, (assoc_id,))
+                row = cursor.fetchone()
+                if row:
+                    category = 'phrases' if row[0].lower() == 'phrase' else 'vocab'
+                    counts[category] += 1
+            elif comp_type == 'convo_pair':
+                counts['phrases'] += 1
+            elif comp_type == 'dialogue':
+                counts['dialogues'] += 1
+        return counts
 
+    def _populate_lesson_content(
+        self,
+        cursor,
+        raw_steps: list,
+        entry: dict,
+    ) -> None:
+        """Add one unlocked lesson's reference material to its review section."""
         for _, comp_type, assoc_id in raw_steps:
             if comp_type == 'monologue':
                 cursor.execute("""
@@ -53,12 +79,22 @@ class PassiveReviewEngine:
                 if lines:
                     entry['dialogues'].append(lines)
 
-    def build_unit_master_sheet(self, phase_num: int, unit_num: int):
+    def build_unit_master_sheet(
+        self,
+        phase_num: int,
+        unit_num: int,
+        accessible_lesson_ids: list[int],
+    ):
         conn = sqlite3.connect(self.db.db_path)
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT l.lesson_id, l.sequence_order 
+            SELECT
+                l.lesson_id,
+                l.sequence_order,
+                l.title,
+                p.title,
+                u.title
             FROM lessons l
             JOIN units u ON l.unit_id = u.unit_id
             JOIN phases p ON u.phase_id = p.phase_id
@@ -69,40 +105,74 @@ class PassiveReviewEngine:
 
         master_sheet = {}
 
-        for lesson_id, lesson_num in lessons:
-            entry = self._empty_lesson_entry()
-            self._populate_lesson_content(cursor, lesson_id, entry)
+        accessible_ids = set(accessible_lesson_ids)
+        for lesson_id, lesson_num, lesson_title, phase_title, unit_title in lessons:
+            entry = self._empty_lesson_entry(locked=lesson_id not in accessible_ids)
+            raw_steps = self.db.get_lesson_structure(lesson_id)
+            entry.update({
+                'lesson_id': lesson_id,
+                'phase_num': phase_num,
+                'phase_title': phase_title,
+                'unit_num': unit_num,
+                'unit_title': unit_title,
+                'lesson_num': lesson_num,
+                'lesson_title': lesson_title,
+                'category_counts': self._lesson_category_counts(cursor, raw_steps),
+            })
+            if not entry['locked']:
+                self._populate_lesson_content(cursor, raw_steps, entry)
             master_sheet[lesson_num] = entry
 
         conn.close()
         return master_sheet
 
-    def build_global_master_sheet(self, completed_lesson_ids: list):
+    def build_global_master_sheet(self, accessible_lesson_ids: list[int]):
         conn = sqlite3.connect(self.db.db_path)
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT l.lesson_id, p.sequence_order, u.sequence_order, l.sequence_order 
+            SELECT
+                l.lesson_id,
+                p.sequence_order,
+                p.title,
+                u.sequence_order,
+                u.title,
+                l.sequence_order,
+                l.title
             FROM lessons l
             JOIN units u ON l.unit_id = u.unit_id
             JOIN phases p ON u.phase_id = p.phase_id
             ORDER BY p.sequence_order, u.sequence_order, l.sequence_order ASC
         """)
         lessons = cursor.fetchall()
-        completed_ids = set(completed_lesson_ids)
+        accessible_ids = set(accessible_lesson_ids)
 
         master_sheet = {}
 
-        for lesson_id, phase_num, unit_num, lesson_num in lessons:
+        for (
+            lesson_id,
+            phase_num,
+            phase_title,
+            unit_num,
+            unit_title,
+            lesson_num,
+            lesson_title,
+        ) in lessons:
             label = f"Phase {phase_num} • Unit {unit_num} • Lesson {lesson_num}"
-            entry = self._empty_lesson_entry(locked=lesson_id not in completed_ids)
+            entry = self._empty_lesson_entry(locked=lesson_id not in accessible_ids)
+            raw_steps = self.db.get_lesson_structure(lesson_id)
             entry.update({
+                'lesson_id': lesson_id,
                 'phase_num': phase_num,
+                'phase_title': phase_title,
                 'unit_num': unit_num,
+                'unit_title': unit_title,
                 'lesson_num': lesson_num,
+                'lesson_title': lesson_title,
+                'category_counts': self._lesson_category_counts(cursor, raw_steps),
             })
             if not entry['locked']:
-                self._populate_lesson_content(cursor, lesson_id, entry)
+                self._populate_lesson_content(cursor, raw_steps, entry)
             master_sheet[label] = entry
         
         conn.close()

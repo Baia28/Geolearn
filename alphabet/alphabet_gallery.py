@@ -1,272 +1,297 @@
-import flet as ft
-from gui.audio_utils import play_audio_file
+"""Browse the Mkhedruli alphabet and inspect individual letters."""
 
-# Set of Georgian vowels to highlight in red
+from collections.abc import Callable
+
+import flet as ft
+
+from gui.services.audio import play_audio_file
+from gui.components import content_card, icon_button, page_header, secondary_button
+from gui.core.layout import page_shell
+from gui.core.theme import TOKENS, DesignTokens
+
+
 VOWELS = {"ა", "ე", "ი", "ო", "უ"}
 
+
 class AlphabetGalleryView(ft.Column):
-    """Grid display of all 33 Mkhedruli letters with image cards and isolated letter detail view."""
-    
-    def __init__(self, db, on_back_to_menu):
-        super().__init__()
+    def __init__(
+        self,
+        db,
+        on_back_to_menu: Callable,
+        tokens: DesignTokens = TOKENS,
+    ):
+        super().__init__(expand=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         self.db = db
         self.on_back_to_menu = on_back_to_menu
-        self.expand = True
-        self.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-        
-        # Audio state
+        self.tokens = tokens
         self.auto_sound_enabled = True
-        # Visual state
-        self.show_images = True 
-        
+        self.show_images = True
         self.show_gallery()
 
-    def toggle_sound(self, e=None):
-        """Toggles hover auto-sound playback on and off."""
+    def toggle_sound(self, _event=None) -> None:
         self.auto_sound_enabled = not self.auto_sound_enabled
         self.show_gallery()
 
-    def toggle_images(self, e=None):
-        """Toggles example card illustration images on and off."""
+    def toggle_images(self, _event=None) -> None:
         self.show_images = not self.show_images
         self.show_gallery()
 
-    def _handle_card_hover(self, e, audio_path: str):
-        """Plays letter audio on mouse cursor enter if auto-sound is active."""
-        if e.data == "true" and self.auto_sound_enabled and audio_path and self.page:
+    def _handle_card_hover(self, event, audio_path: str | None) -> None:
+        if event.data == "true" and self.auto_sound_enabled and audio_path and self.page:
             play_audio_file(self.page, audio_path)
 
-    def show_gallery(self):
-        self.controls.clear()
-        letters = self.db.get_alphabet_letters()
-        cards = []
-        card_height = 170 if self.show_images else 120  # Adjust height based on toggle
-
-        for idx, item in enumerate(letters):
-            geo = item.get("georgian", "")
-            trans = item.get("transliteration") or ""
-            img_path = item.get("example_image")
-            audio_path = item.get("letter_audio")
-            
-            # Highlight vowels in red, consonants in deep blue
-            letter_color = ft.Colors.RED_600 if geo in VOWELS else ft.Colors.BLUE_900
-
-            # Build card contents dynamically
-            column_controls = [ft.Text(geo, size=40, weight=ft.FontWeight.BOLD, color=letter_color)]
-
-            if self.show_images:
-                column_controls.append(
-                    ft.Image(src=img_path or "", width=50, height=50, fit=ft.ImageFit.CONTAIN) 
-                    if img_path else ft.Container(height=50)
-                )
-
-            column_controls.append(ft.Text(trans, size=14, weight=ft.FontWeight.W_500, color=ft.Colors.GREY_700))
-
-            cards.append(
-                ft.Container(
-                    width=135,
-                    height=card_height,
-                    border_radius=16,
-                    bgcolor=ft.Colors.WHITE,
-                    border=ft.border.all(1, ft.Colors.GREY_300),
-                    alignment=ft.alignment.center,
-                    ink=True,
-                    on_click=lambda e, i=idx: self.show_letter_detail(i),
-                    on_hover=lambda e, a=audio_path: self._handle_card_hover(e, a),
-                    content=ft.Column(
-                        column_controls,
-                        alignment=ft.MainAxisAlignment.CENTER,
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=4
-                    ),
-                    shadow=ft.BoxShadow(blur_radius=6, color="#00000010")
-                )
+    def _letter_card(self, item: dict, index: int) -> ft.Card:
+        tokens = self.tokens
+        georgian = item.get("georgian", "")
+        image_path = item.get("example_image")
+        audio_path = item.get("letter_audio")
+        card_controls: list[ft.Control] = [
+            ft.Text(
+                georgian,
+                size=40,
+                weight=ft.FontWeight.BOLD,
+                color=(tokens.colors.error if georgian in VOWELS else tokens.colors.on_primary_container),
             )
-
-        sound_icon = ft.Icons.VOLUME_UP_ROUNDED if self.auto_sound_enabled else ft.Icons.VOLUME_OFF_ROUNDED
-        sound_color = ft.Colors.BLUE_700 if self.auto_sound_enabled else ft.Colors.GREY_500
-
-        image_icon = ft.Icons.IMAGE_ROUNDED if self.show_images else ft.Icons.HIDE_IMAGE_ROUNDED
-        image_color = ft.Colors.RED_600 if self.show_images else ft.Colors.GREY_500
-
-        header = ft.Container(
-            width=650,
-            content=ft.Row(
-                controls=[
-                    ft.IconButton(ft.Icons.ARROW_BACK, icon_size=28, on_click=lambda e: self.on_back_to_menu()),
-                    ft.Text("Georgian Alphabet (33 Letters)", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
-                    ft.Row(
-                        controls=[
-                            ft.IconButton(
-                                icon=image_icon,
-                                icon_color=image_color,
-                                icon_size=28,
-                                tooltip="Toggle Illustration Images",
-                                on_click=self.toggle_images
-                            ),
-                            ft.IconButton(
-                                icon=sound_icon, 
-                                icon_color=sound_color, 
-                                icon_size=28,
-                                tooltip="Toggle Hover Sound",
-                                on_click=self.toggle_sound
-                            )
-                        ],
-                        spacing=0
-                    )
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+        ]
+        if self.show_images:
+            card_controls.append(
+                ft.Image(src=image_path, width=50, height=50, fit=ft.ImageFit.CONTAIN)
+                if image_path
+                else ft.Container(height=50)
+            )
+        card_controls.append(
+            ft.Text(
+                item.get("transliteration") or "",
+                size=tokens.typography.body,
+                weight=ft.FontWeight.W_500,
+                color=tokens.colors.text_secondary,
             )
         )
+        card = content_card(
+            ft.Column(
+                card_controls,
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=tokens.spacing.xs,
+            ),
+            on_click=lambda _event: self.show_letter_detail(index),
+            width=tokens.dimensions.alphabet_card_width,
+            height=170 if self.show_images else 120,
+            padding=tokens.spacing.md,
+            tooltip=f"Open {georgian}",
+            tokens=tokens,
+        )
+        shared_hover = card.content.on_hover
 
-        grid_layout = ft.Column(
+        def handle_hover(event) -> None:
+            shared_hover(event)
+            self._handle_card_hover(event, audio_path)
+
+        card.content.on_hover = handle_hover
+        return card
+
+    def show_gallery(self) -> None:
+        tokens = self.tokens
+        cards = [
+            self._letter_card(item, index)
+            for index, item in enumerate(self.db.get_alphabet_letters())
+        ]
+        actions = ft.Row(
             controls=[
-                header,
-                ft.Text("Hover over a letter to hear its sound. Tap to open full details.", size=14, color=ft.Colors.GREY_600),
-                ft.Container(height=15),
-                ft.Row(controls=cards, wrap=True, spacing=12, alignment=ft.MainAxisAlignment.CENTER)
+                icon_button(
+                    ft.Icons.IMAGE_ROUNDED if self.show_images else ft.Icons.HIDE_IMAGE_ROUNDED,
+                    self.toggle_images,
+                    tooltip=("Hide illustrations" if self.show_images else "Show illustrations"),
+                    selected=self.show_images,
+                    tokens=tokens,
+                ),
+                icon_button(
+                    ft.Icons.VOLUME_UP_ROUNDED if self.auto_sound_enabled else ft.Icons.VOLUME_OFF_ROUNDED,
+                    self.toggle_sound,
+                    tooltip=("Disable hover sound" if self.auto_sound_enabled else "Enable hover sound"),
+                    selected=self.auto_sound_enabled,
+                    tokens=tokens,
+                ),
             ],
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            scroll=ft.ScrollMode.AUTO,
-            expand=True
+            spacing=0,
+            tight=True,
+            wrap=True,
         )
-
-        # Flexible wrapper with 50px side margins so cards reflow freely across big displays        main_wrapper = ft.Container(
-        main_wrapper = ft.Container(
-            content=grid_layout,
-            padding=ft.padding.only(left=50, right=50, top=20, bottom=20),
-            alignment=ft.alignment.top_center,
-            expand=True
-        )
-
-        self.controls = [main_wrapper]
+        self.controls = [
+            page_shell(
+                [
+                    page_header(
+                        "Georgian Alphabet (33 Letters)",
+                        subtitle="Hover to hear a sound; select a letter for details",
+                        on_back=lambda _event: self.on_back_to_menu(),
+                        back_label="Back to alphabet hub",
+                        trailing=actions,
+                        max_width=tokens.dimensions.wide_content_width,
+                        tokens=tokens,
+                    ),
+                    ft.Row(
+                        controls=cards,
+                        wrap=True,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=tokens.spacing.md,
+                        run_spacing=tokens.spacing.md,
+                    ),
+                ],
+                max_width=tokens.dimensions.wide_content_width,
+                tokens=tokens,
+            )
+        ]
         if self.page:
             self.update()
 
-    def show_letter_detail(self, letter_index: int):
-        self.controls.clear()
-        detail_data = self.db.get_letter_detail_by_index(letter_index)
-        
-        letter = detail_data.get("letter")
-        example = detail_data.get("example")
-        total = detail_data.get("total", 0)
-
+    def show_letter_detail(self, letter_index: int) -> None:
+        tokens = self.tokens
+        detail = self.db.get_letter_detail_by_index(letter_index)
+        letter = detail.get("letter")
         if not letter:
             self.show_gallery()
             return
-
-        geo_char = letter.get("georgian", "")
-        trans = letter.get("transliteration") or ""
-        linguistic_desc = letter.get("linguistic_desc") or trans
+        example = detail.get("example") or {}
+        total = detail.get("total", 0)
+        georgian = letter.get("georgian", "")
+        description = letter.get("linguistic_desc") or letter.get("transliteration", "")
         letter_audio = letter.get("letter_audio")
-
-        # Auto-play letter sound on load
         if letter_audio and self.page:
             play_audio_file(self.page, letter_audio)
 
-        letter_color = ft.Colors.RED_600 if geo_char in VOWELS else ft.Colors.BLUE_900
-
-        ex_word = example.get("word") if example else "N/A"
-        ex_meaning = example.get("meaning") if example else "N/A"
-        ex_image = example.get("image") if example else None
-        ex_audio = example.get("audio") if example else None
-
-        detail_card = ft.Container(
-            padding=25,
-            bgcolor=ft.Colors.WHITE,
-            border_radius=20,
-            border=ft.border.all(1, ft.Colors.GREY_200),
-            shadow=ft.BoxShadow(blur_radius=10, color="#0000000A"),
-            width=480,
-            content=ft.Column(
-                controls=[
-                    ft.Text(geo_char, size=88, weight=ft.FontWeight.BOLD, color=letter_color),
-                    ft.Text(f"Pronunciation: {linguistic_desc}", size=18, weight=ft.FontWeight.W_500, color=ft.Colors.GREY_800),
-                    ft.Container(height=2),
-                    ft.ElevatedButton(
-                        "Letter Sound", 
-                        icon=ft.Icons.VOLUME_UP,
-                        on_click=lambda e: play_audio_file(self.page, letter_audio)
-                    ) if letter_audio else ft.Container(),
-                    ft.Divider(height=25, color=ft.Colors.GREY_200),
-                    ft.Image(src=ex_image or "", width=170, height=170, fit=ft.ImageFit.CONTAIN) if ex_image else ft.Container(),
-                    ft.Container(height=5),
-                    ft.Text(f"{ex_word} — {ex_meaning}", size=20, weight=ft.FontWeight.BOLD),
-                    ft.Container(height=10),
-                    ft.ElevatedButton(
-                        "Example Word Sound", 
-                        icon=ft.Icons.VOLUME_UP,
-                        on_click=lambda e: play_audio_file(self.page, ex_audio)
-                    ) if ex_audio else ft.Container(),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=8
+        detail_controls: list[ft.Control] = [
+            ft.Text(
+                georgian,
+                size=88,
+                weight=ft.FontWeight.BOLD,
+                color=(tokens.colors.error if georgian in VOWELS else tokens.colors.on_primary_container),
+            ),
+            ft.Text(
+                f"Pronunciation: {description}",
+                size=tokens.typography.title_sm,
+                weight=ft.FontWeight.W_500,
+                color=tokens.colors.text_secondary,
+                text_align=ft.TextAlign.CENTER,
+            ),
+        ]
+        if letter_audio:
+            detail_controls.append(
+                secondary_button(
+                    "Letter sound",
+                    lambda _event: play_audio_file(self.page, letter_audio),
+                    icon=ft.Icons.VOLUME_UP_ROUNDED,
+                    tokens=tokens,
+                )
+            )
+        if example.get("image"):
+            detail_controls.append(
+                ft.Image(
+                    src=example["image"],
+                    width=170,
+                    height=170,
+                    fit=ft.ImageFit.CONTAIN,
+                )
+            )
+        detail_controls.append(
+            ft.Text(
+                f"{example.get('word', 'N/A')} — {example.get('meaning', 'N/A')}",
+                size=tokens.typography.title_sm,
+                weight=ft.FontWeight.BOLD,
+                color=tokens.colors.text_primary,
+                text_align=ft.TextAlign.CENTER,
             )
         )
-
-        prev_btn = ft.IconButton(
-            icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
-            icon_size=48,
-            disabled=(letter_index == 0),
-            on_click=lambda e: self.show_letter_detail(letter_index - 1)
+        if example.get("audio"):
+            detail_controls.append(
+                secondary_button(
+                    "Example word sound",
+                    lambda _event: play_audio_file(self.page, example["audio"]),
+                    icon=ft.Icons.VOLUME_UP_ROUNDED,
+                    tokens=tokens,
+                )
+            )
+        detail_card = content_card(
+            ft.Column(
+                detail_controls,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=tokens.spacing.md,
+            ),
+            padding=ft.padding.only(
+                left=tokens.spacing.xxl,
+                top=tokens.spacing.xxl,
+                right=tokens.spacing.xxl,
+                bottom=tokens.spacing.xxxl + tokens.spacing.lg,
+            ),
+            width=tokens.dimensions.alphabet_detail_card_width,
+            elevation=tokens.elevation.raised,
+            tokens=tokens,
         )
-        
-        next_btn = ft.IconButton(
-            icon=ft.Icons.CHEVRON_RIGHT_ROUNDED,
-            icon_size=48,
-            disabled=(letter_index == total - 1),
-            on_click=lambda e: self.show_letter_detail(letter_index + 1)
-        )
 
-        nav_row = ft.Row(
-            controls=[prev_btn, detail_card, next_btn],
+        def handle_swipe(event) -> None:
+            velocity = event.primary_velocity or event.velocity_x or 0
+            if abs(velocity) < 150:
+                return
+            next_index = letter_index + (1 if velocity < 0 else -1)
+            if 0 <= next_index < total:
+                self.show_letter_detail(next_index)
+
+        previous_button = icon_button(
+            ft.Icons.CHEVRON_LEFT_ROUNDED,
+            lambda _event: self.show_letter_detail(letter_index - 1),
+            tooltip="Previous letter",
+            size=36,
+            tokens=tokens,
+        )
+        previous_button.disabled = letter_index == 0
+        next_button = icon_button(
+            ft.Icons.CHEVRON_RIGHT_ROUNDED,
+            lambda _event: self.show_letter_detail(letter_index + 1),
+            tooltip="Next letter",
+            size=36,
+            tokens=tokens,
+        )
+        next_button.disabled = letter_index == total - 1
+        carousel = ft.Row(
+            controls=[
+                previous_button,
+                ft.GestureDetector(
+                    content=ft.Container(
+                        content=detail_card,
+                        alignment=ft.alignment.center,
+                        expand=True,
+                    ),
+                    on_horizontal_drag_end=handle_swipe,
+                    drag_interval=tokens.motion.fast,
+                    expand=True,
+                ),
+                next_button,
+            ],
             alignment=ft.MainAxisAlignment.CENTER,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=10
+            spacing=tokens.spacing.sm,
         )
-
-        # Centered Back Button with margin spacer from the top edge and Gallery Icon after text
-        centered_back_bar = ft.Column(
-            controls=[
-                ft.Container(height=25),  # Gives space from the top edge
-                ft.Row(
-                    controls=[
-                        ft.ElevatedButton(
-                            content=ft.Row(
-                                [
-                                    ft.Icon(ft.Icons.ARROW_BACK_ROUNDED, size=20),
-                                    ft.Text("Back to Gallery", size=15, weight=ft.FontWeight.W_500),
-                                    ft.Icon(ft.Icons.GRID_VIEW_ROUNDED, size=20),
-                                ],
-                                alignment=ft.MainAxisAlignment.CENTER,
-                                spacing=8,
-                                tight=True
-                            ),
-                            on_click=lambda e: self.show_gallery(),
-                            style=ft.ButtonStyle(padding=14)
-                        )
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                )
-            ]
+        position = ft.Text(
+            f"{letter_index + 1} / {total} • Swipe or use arrows",
+            size=tokens.typography.caption,
+            color=tokens.colors.text_secondary,
+            text_align=ft.TextAlign.CENTER,
         )
-
-        layout_wrapper = ft.Container(
-            content=ft.Column(
-                controls=[
-                    centered_back_bar,
-                    ft.Container(height=15),
-                    nav_row
+        self.controls = [
+            page_shell(
+                [
+                    page_header(
+                        "Letter detail",
+                        on_back=lambda _event: self.show_gallery(),
+                        back_label="Back to gallery",
+                        max_width=tokens.dimensions.reading_width,
+                        tokens=tokens,
+                    ),
+                    carousel,
+                    position,
                 ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True
-            ),
-            padding=ft.padding.only(left=30, right=30, bottom=30),
-            alignment=ft.alignment.top_center,
-            expand=True
-        )
-
-        self.controls = [layout_wrapper]
+                max_width=tokens.dimensions.reading_width,
+                tokens=tokens,
+            )
+        ]
         if self.page:
             self.update()

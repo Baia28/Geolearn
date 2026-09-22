@@ -1,6 +1,10 @@
 """Reusable Georgian keyboard control and Latin-to-Georgian input conversion."""
 
+from collections.abc import Callable
+
 import flet as ft
+
+from gui.core.theme import TOKENS, DesignTokens
 
 
 class GeorgianKeyboard(ft.Container):
@@ -31,16 +35,16 @@ class GeorgianKeyboard(ft.Container):
 
     _STYLES = {
         "compact": {
-            "key_width": 40, "key_height": 50, "key_radius": 6,
+            "key_width": 40, "key_height": 50,
             "key_spacing": 4, "latin_size": 9, "geo_size": 18,
             "action_height": 44, "shift_width": 80, "space_width": 200,
-            "backspace_width": 65, "action_spacing": 6, "action_radius": 6,
+            "backspace_width": 65, "action_spacing": 6,
         },
         "large": {
-            "key_width": 58, "key_height": 68, "key_radius": 8,
+            "key_width": 58, "key_height": 68,
             "key_spacing": 6, "latin_size": 14, "geo_size": 26,
             "action_height": 54, "shift_width": 110, "space_width": 280,
-            "backspace_width": 90, "action_spacing": 8, "action_radius": 8,
+            "backspace_width": 90, "action_spacing": 8,
         },
     }
 
@@ -54,17 +58,24 @@ class GeorgianKeyboard(ft.Container):
         )
     }
 
-    def __init__(self, on_key_tap: callable, on_backspace: callable, size: str = "compact"):
+    def __init__(
+        self,
+        on_key_tap: Callable[[str], None],
+        on_backspace: Callable,
+        size: str = "compact",
+        tokens: DesignTokens = TOKENS,
+    ):
         super().__init__()
         if size not in self._STYLES:
             raise ValueError(f"Unknown keyboard size: {size}")
 
         self.on_key_tap = on_key_tap
         self.on_backspace = on_backspace
+        self.tokens = tokens
         self.style = self._STYLES[size]
         self.is_large = size == "large"
         self.is_shift = False
-        self.padding = 10
+        self.padding = tokens.spacing.md
         self.alignment = ft.alignment.center
         self._build_keyboard()
 
@@ -74,6 +85,7 @@ class GeorgianKeyboard(ft.Container):
         return "".join(cls._LATIN_TO_GEORGIAN.get(character, character) for character in text)
 
     def _build_keyboard(self):
+        colors = self.tokens.colors
         rows = []
         for row_data in self.KEY_MAP:
             row_controls = []
@@ -81,25 +93,26 @@ class GeorgianKeyboard(ft.Container):
                 is_shifted_key = self.is_shift and geo_upper is not None
                 current_geo = geo_upper if is_shifted_key else geo_lower
                 current_lat = latin_upper if is_shifted_key else latin_lower
-                key_bg = ft.Colors.AMBER_100 if self.is_large and is_shifted_key else ft.Colors.BLUE_GREY_50
+                key_bg = colors.secondary_container if self.is_large and is_shifted_key else colors.surface
 
                 key_btn = ft.Container(
                     width=self.style["key_width"],
                     height=self.style["key_height"],
                     bgcolor=key_bg,
-                    border_radius=self.style["key_radius"],
+                    border_radius=self.tokens.radius.md if self.is_large else self.tokens.radius.sm,
+                    border=ft.border.all(1, colors.border),
                     alignment=ft.alignment.center,
                     ink=True,
                     on_click=lambda event, char=current_geo: self._handle_tap(char, event),
                     content=ft.Stack(
                         controls=[
                             ft.Container(
-                                content=ft.Text(current_lat, size=self.style["latin_size"], color=ft.Colors.GREY_600, weight=ft.FontWeight.BOLD if self.is_large else None),
+                                content=ft.Text(current_lat, size=self.style["latin_size"], color=colors.text_secondary, weight=ft.FontWeight.BOLD if self.is_large else None),
                                 alignment=ft.alignment.top_left,
                                 padding=ft.padding.only(left=5 if self.is_large else 3, top=4 if self.is_large else 2),
                             ),
                             ft.Container(
-                                content=ft.Text(current_geo, size=self.style["geo_size"], weight=ft.FontWeight.BOLD if self.is_large else ft.FontWeight.W_500, color=ft.Colors.BLUE_900 if self.is_large else ft.Colors.BLACK87),
+                                content=ft.Text(current_geo, size=self.style["geo_size"], weight=ft.FontWeight.BOLD if self.is_large else ft.FontWeight.W_500, color=colors.text_primary),
                                 alignment=ft.alignment.center,
                             ),
                         ]
@@ -116,31 +129,34 @@ class GeorgianKeyboard(ft.Container):
         shift_btn = ft.Container(
             content=ft.Row(
                 [
-                    ft.Icon(ft.Icons.ARROW_UPWARD_ROUNDED, size=18 if self.is_large else 14, color=ft.Colors.BLACK87),
-                    ft.Text("SHIFT" if self.is_large else "Shift", size=13 if self.is_large else 12, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK87),
+                    ft.Icon(ft.Icons.ARROW_UPWARD_ROUNDED, size=18 if self.is_large else 14, color=colors.text_primary),
+                    ft.Text("SHIFT" if self.is_large else "Shift", size=13 if self.is_large else 12, weight=ft.FontWeight.BOLD, color=colors.text_primary),
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
                 spacing=3 if self.is_large else 2,
             ),
             width=self.style["shift_width"],
             height=self.style["action_height"],
-            bgcolor=(ft.Colors.AMBER_300 if self.is_large else ft.Colors.BLUE_200) if self.is_shift else ft.Colors.BLUE_GREY_100,
-            border_radius=self.style["action_radius"],
+            bgcolor=colors.primary_container if self.is_shift else colors.subtle_surface,
+            border_radius=self.tokens.radius.md if self.is_large else self.tokens.radius.sm,
+            border=ft.border.all(1, colors.border),
             alignment=ft.alignment.center,
             ink=True,
             on_click=self._toggle_shift,
         )
         space_btn = ft.Container(
-            content=ft.Text("SPACE", size=12 if self.is_large else 11, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+            content=ft.Text("SPACE", size=12 if self.is_large else 11, weight=ft.FontWeight.BOLD, color=colors.text_secondary),
             width=self.style["space_width"], height=self.style["action_height"],
-            bgcolor=ft.Colors.BLUE_GREY_100, border_radius=self.style["action_radius"],
+            bgcolor=colors.subtle_surface, border_radius=self.tokens.radius.md if self.is_large else self.tokens.radius.sm,
+            border=ft.border.all(1, colors.border),
             alignment=ft.alignment.center, ink=True,
             on_click=lambda event: self._handle_tap(" ", event),
         )
         backspace_btn = ft.Container(
-            content=ft.Icon(ft.Icons.BACKSPACE_OUTLINED, size=22 if self.is_large else 18, color=ft.Colors.RED_700),
+            content=ft.Icon(ft.Icons.BACKSPACE_OUTLINED, size=22 if self.is_large else 18, color=colors.error),
             width=self.style["backspace_width"], height=self.style["action_height"],
-            bgcolor=ft.Colors.RED_50, border_radius=self.style["action_radius"],
+            bgcolor=colors.error_container, border_radius=self.tokens.radius.md if self.is_large else self.tokens.radius.sm,
+            border=ft.border.all(1, colors.border),
             alignment=ft.alignment.center, ink=True, on_click=self._handle_backspace,
         )
         rows.append(ft.Row(controls=[shift_btn, space_btn, backspace_btn], alignment=ft.MainAxisAlignment.CENTER, spacing=self.style["action_spacing"]))

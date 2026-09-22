@@ -101,7 +101,8 @@ class WaveGenerator:
                 "eng": eng, 
                 "trans": display_trans,
                 "image": image_src,
-                "audio": audio_src
+                "audio": audio_src,
+                "content_type": self.content_db.get_content_type(c_id),
             }
             
             distractors = self.content_db.get_distractors(lesson_id, c_id, limit=2)
@@ -263,7 +264,12 @@ class WaveGenerator:
                     c_id = word_row[0]
                     geo = word_row[1]
                     eng = word_row[2]
-                    vocab_buffer.append({"id": c_id, "geo": geo, "eng": eng})
+                    vocab_buffer.append({
+                        "id": c_id,
+                        "geo": geo,
+                        "eng": eng,
+                        "content_type": self.content_db.get_content_type(c_id),
+                    })
                     current_index += 1
                     
             if vocab_buffer:
@@ -392,6 +398,7 @@ class WaveGenerator:
                             "trans": trans,
                             "image": image_src,
                             "audio": audio_src,
+                            "content_type": self.content_db.get_content_type(rev_id),
                             "is_review_item": True  
                         }
                     })
@@ -421,7 +428,8 @@ class WaveGenerator:
                         "geo": geo, 
                         "trans": trans,
                         "image": image_src,
-                        "audio": audio_src
+                        "audio": audio_src,
+                        "content_type": self.content_db.get_content_type(rev_id),
                     }
                 })
 

@@ -1,12 +1,15 @@
 """Shared Flet audio playback helpers."""
 
+import logging
+
 import flet as ft
 from flet.core.audio import ReleaseMode
 
-# Flet renders each Audio control in page.overlay. Keep the overlay bounded while
-# still allowing learners to compare several pronunciations at once.
-MAX_SIMULTANEOUS_PLAYERS = 3
+# Spoken learning audio should remain intelligible. Starting a new clip replaces
+# the previous player so rapid gallery hovers never mix several letters together.
+MAX_SIMULTANEOUS_PLAYERS = 1
 _PAGE_PLAYER_REGISTRY = "_geolearn_audio_players"
+logger = logging.getLogger(__name__)
 
 
 def _get_active_players(page: ft.Page) -> list:
@@ -27,12 +30,12 @@ def _remove_player(page: ft.Page, player: ft.Audio) -> None:
         page.overlay.remove(player)
 
 
-def play_audio_file(page: ft.Page, raw_audio_path: str):
-    """Play an audio asset, mixing up to three clips at a time."""
-    print(f"DEBUG - Attempting to play audio from path: '{raw_audio_path}'")
+def play_audio_file(page: ft.Page, raw_audio_path: str) -> None:
+    """Play one audio asset at a time, replacing any active pronunciation."""
+    logger.debug("Attempting to play audio from path: %s", raw_audio_path)
 
     if not raw_audio_path or not page:
-        print("DEBUG - Audio skipped: raw_audio_path or page context is missing/None")
+        logger.debug("Audio skipped because the path or page context is missing")
         return
 
     # Flet resolves audio assets from a slash-prefixed path.
@@ -41,7 +44,7 @@ def play_audio_file(page: ft.Page, raw_audio_path: str):
 
     active_players = _get_active_players(page)
     while len(active_players) >= MAX_SIMULTANEOUS_PLAYERS:
-        # Bound page.overlay to avoid Flet freezes caused by accumulated controls.
+        # Prevent overlapping speech and avoid accumulating overlay controls.
         _remove_player(page, active_players.pop(0))
 
     # Separate players allow the currently active clips to overlap.
