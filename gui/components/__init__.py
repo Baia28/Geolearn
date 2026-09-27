@@ -22,6 +22,7 @@ from gui.components.feedback import (
     review_badge,
 )
 from gui.components.headers import instruction_banner, navigation_bar, page_header, section_label
+from gui.components.guidance import guidance_button
 from gui.components.inputs import search_input, text_input
 
 __all__ = [
@@ -34,6 +35,7 @@ __all__ = [
     "destructive_button",
     "exercise_action_button",
     "feedback_panel",
+    "guidance_button",
     "icon_button",
     "instruction_banner",
     "loading_state",

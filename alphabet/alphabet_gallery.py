@@ -5,12 +5,39 @@ from collections.abc import Callable
 import flet as ft
 
 from gui.services.audio import play_audio_file
-from gui.components import content_card, icon_button, page_header, secondary_button
+from gui.components import (
+    content_card,
+    guidance_button,
+    icon_button,
+    page_header,
+    secondary_button,
+)
 from gui.core.layout import page_shell
 from gui.core.theme import TOKENS, DesignTokens
 
 
 VOWELS = {"ა", "ე", "ი", "ო", "უ"}
+
+
+def letter_with_baseline(
+    letter: str,
+    *,
+    size: int,
+    color: str,
+    tokens: DesignTokens,
+) -> ft.Text:
+    """Render a Georgian letter against a subtle handwriting baseline."""
+    return ft.Text(
+        letter,
+        size=size,
+        weight=ft.FontWeight.BOLD,
+        color=color,
+        style=ft.TextStyle(
+            decoration=ft.TextDecoration.UNDERLINE,
+            decoration_color=tokens.colors.writing_guide,
+            decoration_thickness=1.5,
+        ),
+    )
 
 
 class AlphabetGalleryView(ft.Column):
@@ -46,11 +73,11 @@ class AlphabetGalleryView(ft.Column):
         image_path = item.get("example_image")
         audio_path = item.get("letter_audio")
         card_controls: list[ft.Control] = [
-            ft.Text(
+            letter_with_baseline(
                 georgian,
                 size=40,
-                weight=ft.FontWeight.BOLD,
                 color=(tokens.colors.error if georgian in VOWELS else tokens.colors.on_primary_container),
+                tokens=tokens,
             )
         ]
         if self.show_images:
@@ -98,6 +125,34 @@ class AlphabetGalleryView(ft.Column):
         ]
         actions = ft.Row(
             controls=[
+                guidance_button(
+                    "Using the Alphabet Gallery",
+                    "Use the gallery to connect each Mkhedruli letter with its sound, shape, and an example word.",
+                    [
+                        (
+                            "Red letters are vowels",
+                            "The five vowels — ა, ე, ი, ო, and უ — are shown in red so you can recognize them quickly.",
+                        ),
+                        (
+                            "The underline is a writing guide",
+                            "The line beneath each letter shows how the letter sits on a handwriting baseline. It is not part of the letter itself.",
+                        ),
+                        (
+                            "Listen and explore",
+                            "With sound enabled, hover over a card to hear the letter. On a touch device, open the card to hear it and use the replay button.",
+                        ),
+                        (
+                            "Open a letter for more detail",
+                            "Select any card for pronunciation guidance and an example word. Use the arrows or swipe to move through the alphabet.",
+                        ),
+                        (
+                            "Adjust the gallery",
+                            "Use the image button to show or hide illustrations and the sound button to turn hover audio on or off. Mkhedruli has no uppercase and lowercase forms.",
+                        ),
+                    ],
+                    tooltip="How to use the Alphabet Gallery",
+                    tokens=tokens,
+                ),
                 icon_button(
                     ft.Icons.IMAGE_ROUNDED if self.show_images else ft.Icons.HIDE_IMAGE_ROUNDED,
                     self.toggle_images,
@@ -160,11 +215,11 @@ class AlphabetGalleryView(ft.Column):
             play_audio_file(self.page, letter_audio)
 
         detail_controls: list[ft.Control] = [
-            ft.Text(
+            letter_with_baseline(
                 georgian,
                 size=88,
-                weight=ft.FontWeight.BOLD,
                 color=(tokens.colors.error if georgian in VOWELS else tokens.colors.on_primary_container),
+                tokens=tokens,
             ),
             ft.Text(
                 f"Pronunciation: {description}",

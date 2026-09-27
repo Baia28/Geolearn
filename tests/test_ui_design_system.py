@@ -12,6 +12,7 @@ from gui.components import (
     action_card,
     content_card,
     exercise_action_button,
+    guidance_button,
     icon_button,
     primary_button,
     page_header,
@@ -173,6 +174,32 @@ class ComponentTests(unittest.TestCase):
         self.assertEqual(button.tooltip, "Back to units")
         self.assertEqual(button.width, TOKENS.dimensions.touch_target)
         self.assertEqual(button.height, TOKENS.dimensions.touch_target)
+
+    def test_guidance_button_opens_and_closes_an_accessible_dialog(self):
+        button = guidance_button(
+            "How to use this page",
+            "A short introduction.",
+            [("First step", "Do this first."), ("Next step", "Then do this.")],
+        )
+        page = SimpleNamespace(
+            opened=[],
+            closed=[],
+            open=lambda dialog: page.opened.append(dialog),
+            close=lambda dialog: page.closed.append(dialog),
+        )
+
+        button.on_click(SimpleNamespace(page=page))
+
+        self.assertEqual(button.icon, ft.Icons.HELP_OUTLINE_ROUNDED)
+        self.assertEqual(button.tooltip, "How to use this page")
+        self.assertEqual(button.width, TOKENS.dimensions.touch_target)
+        self.assertEqual(len(page.opened), 1)
+        dialog = page.opened[0]
+        self.assertTrue(dialog.modal)
+        self.assertTrue(dialog.scrollable)
+        self.assertEqual(dialog.title.value, "How to use this page")
+        dialog.actions[0].on_click(SimpleNamespace(page=page))
+        self.assertEqual(page.closed, [dialog])
 
     def test_answer_feedback_retains_contrast_while_disabled(self):
         button = answer_button("Answer", lambda _event: None)

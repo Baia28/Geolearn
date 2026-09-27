@@ -44,6 +44,7 @@ class ColorTokens:
     text_muted: str = ft.Colors.with_opacity(0.72, ft.Colors.ON_SURFACE_VARIANT)
     border: str = ft.Colors.OUTLINE_VARIANT
     border_strong: str = ft.Colors.OUTLINE
+    writing_guide: str = ft.Colors.with_opacity(0.48, ft.Colors.ON_SURFACE_VARIANT)
     disabled: str = ft.Colors.with_opacity(0.12, ft.Colors.ON_SURFACE)
     disabled_text: str = ft.Colors.with_opacity(0.38, ft.Colors.ON_SURFACE)
     hover: str = ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)

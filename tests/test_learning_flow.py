@@ -584,6 +584,12 @@ class AlphabetUXTests(unittest.TestCase):
             grid.controls[0].content.width,
             gallery.tokens.dimensions.alphabet_card_width,
         )
+        letter = grid.controls[0].content.content.controls[0]
+        self.assertEqual(letter.style.decoration, ft.TextDecoration.UNDERLINE)
+        self.assertEqual(
+            letter.style.decoration_color,
+            gallery.tokens.colors.writing_guide,
+        )
 
     def test_letter_detail_supports_side_controls_and_swiping(self):
         gallery = AlphabetGalleryView(self.db, lambda: None)
@@ -596,6 +602,10 @@ class AlphabetUXTests(unittest.TestCase):
         self.assertIsInstance(carousel.controls[1], ft.GestureDetector)
         self.assertTrue(carousel.controls[0].disabled)
         self.assertFalse(carousel.controls[2].disabled)
+
+        detail_card = carousel.controls[1].content.content
+        detail_letter = detail_card.content.content.controls[0]
+        self.assertEqual(detail_letter.style.decoration, ft.TextDecoration.UNDERLINE)
 
         carousel.controls[1].on_horizontal_drag_end(
             SimpleNamespace(primary_velocity=-500, velocity_x=-500)

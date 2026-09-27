@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import flet as ft
 
-from gui.components import action_card, progress_card, section_label
+from gui.components import action_card, guidance_button, progress_card, section_label
 from gui.core.layout import page_shell, responsive_split
 from gui.core.theme import TOKENS, DesignTokens
 
@@ -34,9 +34,41 @@ class HomeView(ft.Column):
 
     def _build_ui(self) -> None:
         tokens = self.tokens
+        help_action = guidance_button(
+            "How to use GeoLearn",
+            "New here? This is a helpful route through the app, but you can explore and learn at your own pace.",
+            [
+                (
+                    "Begin with the Georgian alphabet",
+                    "Open Georgian Alphabet Resources to get familiar with the 33 Mkhedruli letters, their sounds, and the keyboard. You do not need to master everything before moving on.",
+                ),
+                (
+                    "Then start Phase 0",
+                    "Choose Phase 0, open a unit, and work through its lessons. The phases build your skills step by step.",
+                ),
+                (
+                    "Use the supportive materials",
+                    "The tools on the right help you practise, revisit unlocked vocabulary, phrases, and dialogues, and learn about Georgian culture. On a narrow screen, these tools appear below the curriculum.",
+                ),
+                (
+                    "Learn in the way that suits you",
+                    "It is also fine to learn the alphabet as you go. Return to the alphabet resources or review tools whenever you need extra support.",
+                ),
+            ],
+            tooltip="How to use GeoLearn",
+            tokens=tokens,
+        )
+        header_actions = ft.Row(
+            controls=[
+                help_action,
+                self.theme_action or ft.Container(width=tokens.dimensions.touch_target),
+            ],
+            spacing=0,
+            tight=True,
+        )
         header = ft.Row(
             controls=[
-                ft.Container(width=tokens.dimensions.touch_target),
+                ft.Container(width=tokens.dimensions.touch_target * 2),
                 ft.Column(
                     controls=[
                         ft.Row(
@@ -63,7 +95,7 @@ class HomeView(ft.Column):
                     spacing=tokens.spacing.xs,
                     expand=True,
                 ),
-                self.theme_action or ft.Container(width=tokens.dimensions.touch_target),
+                header_actions,
             ],
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
